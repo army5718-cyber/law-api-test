@@ -10,6 +10,7 @@ Option Explicit
 ' 블록 이름 규칙: Blk_<09_배분결과 행번호>
 ' ============================================================
 
+Private Const SCROLL_STEP As Long = 4      ' 한 번에 4칸(2시간)씩 이동
 Private pollOn As Boolean
 Private pollNext As Date
 Private busy As Boolean
@@ -105,14 +106,7 @@ Public Sub RebuildGrid()
     Dim n As Long
     If HasInspectors(inspectors) Then n = UBound(inspectors) - LBound(inspectors) + 1 Else n = 0
 
-    Dim startTime As Date, endTime As Date, slotMin As Long, nSlots As Long, workLo As Long, workHi As Long
-    startTime = DispStartTime()
-    endTime = DispEndTime()
-    slotMin = SettingLong("슬롯단위_분")
-    nSlots = CalcSlotCount(startTime, endTime, slotMin)
-    workLo = WorkFirstSlot()
-    workHi = WorkLastSlot()
-    Dim unCol As Long, c As Long, s As Long
+    Dim unCol As Long, c As Long
     unCol = GRID_COL0 + n + 1
 
     ' 현황판 영역 초기화 (O열 이후만)
@@ -124,10 +118,9 @@ Public Sub RebuildGrid()
         .VerticalAlignment = xlTop
     End With
 
-    Dim navy As Long, paleBlue As Long, dotBlue As Long
+    Dim navy As Long, paleBlue As Long
     navy = RGB(31, 56, 100)
     paleBlue = RGB(221, 235, 247)
-    dotBlue = RGB(91, 155, 213)
 
     ' 열 너비 / 머리글 (한 번에)
     ws.Columns(GRID_COL0).ColumnWidth = 5.5
@@ -154,16 +147,61 @@ Public Sub RebuildGrid()
         .Borders(xlEdgeBottom).Color = navy
     End With
 
-    ' 시간 라벨 (00:00 ~ 24:00)
+    DrawTimeWindow ws, unCol
+
+    Board_BuildChrome
+    Board_Refresh
+bail:
+    Dim em As String
+    If Err.Number <> 0 Then em = Err.Description
+    FastEnd
+    If em <> "" Then Say "현황판을 그리는 중 오류가 발생했습니다: " & em, vbCritical
+End Sub
+
+' ------------------------------------------------------------
+' 시간대 창: 7행부터 BoardWinRows 칸만 보이고, [▲][▼]로 창을 움직임 (접수대장은 제자리)
+'   라벨/격자/근무시간 밖 음영만 다시 그림 (검사자 열은 건드리지 않음)
+' ------------------------------------------------------------
+Private Sub DrawTimeWindow(ws As Worksheet, ByVal unCol As Long)
+    Dim navy As Long, paleBlue As Long, dotBlue As Long, gridBlue As Long
+    navy = RGB(31, 56, 100)
+    paleBlue = RGB(221, 235, 247)
+    dotBlue = RGB(91, 155, 213)
+    gridBlue = RGB(191, 207, 224)
+
+    Dim startTime As Date, endTime As Date, slotMin As Long, nSlots As Long, workLo As Long, workHi As Long
+    startTime = DispStartTime()
+    endTime = DispEndTime()
+    slotMin = SettingLong("슬롯단위_분")
+    nSlots = CalcSlotCount(startTime, endTime, slotMin)
+    workLo = WorkFirstSlot()
+    workHi = WorkLastSlot()
+    Dim winN As Long, topS As Long, i As Long, sl As Long
+    winN = BoardWinRows()
+    topS = BoardTopSlot()
+
+    ' 본문 영역 초기화 (O열 이후, 창 높이 전체)
+    With ws.Range(ws.Cells(GRID_START_ROW, GRID_COL0), ws.Cells(GRID_START_ROW + BOARD_WIN_ROWS - 1, GRID_COL0 + 40))
+        .Clear
+        .Font.name = "맑은 고딕"
+        .Font.Size = 9
+        .VerticalAlignment = xlTop
+    End With
+
+    ' 시간 라벨 (창에 보이는 칸만; 시간축 끝의 다음 칸 = 마감 행)
     Dim lab() As Variant
-    ReDim lab(1 To nSlots + 1, 1 To 1)
-    For s = 1 To nSlots
-        lab(s, 1) = SlotIndexToTimeStr(s, startTime, slotMin)
-    Next s
-    lab(nSlots + 1, 1) = TimeLabel(endTime)
-    Dim lastSlotRow As Long
-    lastSlotRow = GRID_START_ROW + nSlots - 1
-    With ws.Range(ws.Cells(GRID_START_ROW, GRID_COL0), ws.Cells(lastSlotRow + 1, GRID_COL0))
+    ReDim lab(1 To winN, 1 To 1)
+    For i = 1 To winN
+        sl = topS + i - 1
+        If sl <= nSlots Then
+            lab(i, 1) = SlotIndexToTimeStr(sl, startTime, slotMin)
+        ElseIf sl = nSlots + 1 Then
+            lab(i, 1) = TimeLabel(endTime)
+        End If
+    Next i
+    Dim lastRow As Long, lastSlotRow As Long
+    lastRow = GRID_START_ROW + winN - 1
+    With ws.Range(ws.Cells(GRID_START_ROW, GRID_COL0), ws.Cells(lastRow, GRID_COL0))
         .NumberFormat = "@"
         .Value = lab
         .Font.Size = 8
@@ -173,42 +211,104 @@ Public Sub RebuildGrid()
         .HorizontalAlignment = xlRight
         .VerticalAlignment = xlTop
     End With
-    ws.Cells(lastSlotRow + 1, GRID_COL0).Font.Color = RGB(128, 128, 128)
-    ws.Range(ws.rows(GRID_START_ROW), ws.rows(lastSlotRow)).RowHeight = BODY_ROW_H
+    ws.Range(ws.rows(GRID_START_ROW), ws.rows(lastRow)).RowHeight = BODY_ROW_H
 
-    ' 격자 (세로선 + 30분 점선) - 범위 단위로 한 번에
-    With ws.Range(ws.Cells(GRID_START_ROW, GRID_COL0 + 1), ws.Cells(lastSlotRow, unCol))
-        .Borders(xlInsideVertical).LineStyle = xlContinuous
-        .Borders(xlInsideVertical).Color = RGB(191, 207, 224)
-        .Borders(xlEdgeLeft).LineStyle = xlContinuous
-        .Borders(xlEdgeLeft).Color = RGB(191, 207, 224)
-        .Borders(xlEdgeRight).LineStyle = xlContinuous
-        .Borders(xlEdgeRight).Color = RGB(191, 207, 224)
-        .Borders(xlInsideHorizontal).LineStyle = xlDot
-        .Borders(xlInsideHorizontal).Color = dotBlue
-        .Borders(xlEdgeBottom).LineStyle = xlDot
-        .Borders(xlEdgeBottom).Color = dotBlue
-    End With
-    ' 근무시간 밖은 연한 회색
-    If workLo > 1 Then ws.Range(ws.Cells(GRID_START_ROW, GRID_COL0 + 1), ws.Cells(GRID_START_ROW + workLo - 2, unCol)).Interior.Color = RGB(244, 244, 244)
-    If workHi < nSlots Then ws.Range(ws.Cells(GRID_START_ROW + workHi, GRID_COL0 + 1), ws.Cells(lastSlotRow, unCol)).Interior.Color = RGB(244, 244, 244)
-    ' 마감 행 (하루 끝 선). 행 높이는 접수대장 비고 행과 공유하므로 건드리지 않음
-    With ws.Range(ws.Cells(lastSlotRow + 1, GRID_COL0 + 1), ws.Cells(lastSlotRow + 1, unCol))
-        .Interior.Color = RGB(242, 242, 242)
-        .Borders(xlEdgeBottom).LineStyle = xlContinuous
-        .Borders(xlEdgeBottom).Color = navy
-    End With
-    ws.Cells(lastSlotRow + 1, GRID_COL0 + 1).Value = "하루 끝"
-    ws.Cells(lastSlotRow + 1, GRID_COL0 + 1).Font.Color = RGB(128, 128, 128)
-    ws.Cells(lastSlotRow + 1, GRID_COL0 + 1).Font.Size = 8
+    ' 슬롯 칸이 있는 마지막 행 (마감 행이 창에 들어오면 그 바로 위)
+    lastSlotRow = lastRow
+    If topS + winN - 1 >= nSlots + 1 Then lastSlotRow = GRID_START_ROW + (nSlots - topS)
+    If lastSlotRow >= GRID_START_ROW Then
+        With ws.Range(ws.Cells(GRID_START_ROW, GRID_COL0 + 1), ws.Cells(lastSlotRow, unCol))
+            .Borders(xlInsideVertical).LineStyle = xlContinuous
+            .Borders(xlInsideVertical).Color = gridBlue
+            .Borders(xlEdgeLeft).LineStyle = xlContinuous
+            .Borders(xlEdgeLeft).Color = gridBlue
+            .Borders(xlEdgeRight).LineStyle = xlContinuous
+            .Borders(xlEdgeRight).Color = gridBlue
+            .Borders(xlInsideHorizontal).LineStyle = xlDot
+            .Borders(xlInsideHorizontal).Color = dotBlue
+            .Borders(xlEdgeBottom).LineStyle = xlDot
+            .Borders(xlEdgeBottom).Color = dotBlue
+        End With
+        ' 근무시간 밖은 연한 회색 (창 안의 해당 구간만)
+        Dim r1 As Long, r2 As Long
+        If workLo > topS Then
+            r1 = GRID_START_ROW
+            r2 = GRID_START_ROW + workLo - topS - 1
+            If r2 > lastSlotRow Then r2 = lastSlotRow
+            ws.Range(ws.Cells(r1, GRID_COL0 + 1), ws.Cells(r2, unCol)).Interior.Color = RGB(244, 244, 244)
+        End If
+        If workHi < nSlots Then
+            r1 = GRID_START_ROW + workHi + 1 - topS
+            If r1 < GRID_START_ROW Then r1 = GRID_START_ROW
+            If r1 <= lastSlotRow Then ws.Range(ws.Cells(r1, GRID_COL0 + 1), ws.Cells(lastSlotRow, unCol)).Interior.Color = RGB(244, 244, 244)
+        End If
+    End If
+    ' 마감 행 (하루 끝 선)
+    If lastSlotRow < lastRow Then
+        With ws.Range(ws.Cells(lastRow, GRID_COL0 + 1), ws.Cells(lastRow, unCol))
+            .Interior.Color = RGB(242, 242, 242)
+            .Borders(xlEdgeBottom).LineStyle = xlContinuous
+            .Borders(xlEdgeBottom).Color = navy
+        End With
+        ws.Cells(lastRow, GRID_COL0).Font.Color = RGB(128, 128, 128)
+        ws.Cells(lastRow, GRID_COL0 + 1).Value = "하루 끝"
+        ws.Cells(lastRow, GRID_COL0 + 1).Font.Color = RGB(128, 128, 128)
+        ws.Cells(lastRow, GRID_COL0 + 1).Font.Size = 8
+    End If
+End Sub
 
-    Board_BuildChrome
+' 슬롯(시간 칸) -> 화면 행. 창 밖이면 창 위/아래 바깥 행번호가 나옴
+Private Function SlotRow(ByVal slot As Long) As Long
+    SlotRow = GRID_START_ROW + slot - BoardTopSlot()
+End Function
+
+' 슬롯 slot ~ slot+nS-1 중 창에 보이는 행 범위. 하나도 안 보이면 False
+Private Function VisibleRows(ByVal slot As Long, ByVal nS As Long, ByRef dr1 As Long, ByRef dr2 As Long) As Boolean
+    Dim winBot As Long
+    winBot = GRID_START_ROW + BoardWinRows() - 1
+    dr1 = SlotRow(slot)
+    dr2 = dr1 + nS - 1
+    If dr2 < GRID_START_ROW Or dr1 > winBot Then Exit Function
+    If dr1 < GRID_START_ROW Then dr1 = GRID_START_ROW
+    If dr2 > winBot Then dr2 = winBot
+    VisibleRows = True
+End Function
+
+' ------------------------------------------------------------
+' 시간대 창 스크롤 ([▲] [▼] [근무시간] 버튼). 블록을 끌어 놓은 직후라면 그 이동부터 처리
+' ------------------------------------------------------------
+Private Sub Board_Scroll(ByVal delta As Long)
+    Board_CheckMoves
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets(SH_DAY)
+    Dim before As Long
+    before = BoardTopSlot()
+    If delta = 0 Then
+        gBoardTop = 0
+    Else
+        gBoardTop = before + delta
+    End If
+    If BoardTopSlot() = before And delta <> 0 Then Exit Sub
+    Dim names() As String, unCol As Long
+    GetBoardCols names, unCol
+    FastBegin
+    On Error GoTo bail
+    DrawTimeWindow ws, unCol
     Board_Refresh
 bail:
-    Dim em As String
-    If Err.Number <> 0 Then em = Err.Description
     FastEnd
-    If em <> "" Then Say "현황판을 그리는 중 오류가 발생했습니다: " & em, vbCritical
+End Sub
+
+Public Sub Board_ScrollUp()
+    Board_Scroll -SCROLL_STEP
+End Sub
+
+Public Sub Board_ScrollDown()
+    Board_Scroll SCROLL_STEP
+End Sub
+
+Public Sub Board_ScrollHome()
+    Board_Scroll 0
 End Sub
 
 ' ------------------------------------------------------------
@@ -236,6 +336,7 @@ Public Sub Board_BuildChrome()
         .IndentLevel = 1
     End With
     Board_UpdateHeader
+    Board_BuildScrollButtons ws, unCol
 
     ' 범례 (4행, 현황판 오른쪽 끝에 맞춰 7칸)
     Dim labels As Variant, i As Long, startCol As Long
@@ -297,6 +398,48 @@ Public Sub Board_BuildChrome()
     End If
 End Sub
 
+' 제목 막대(5행) 오른쪽 끝의 시간대 스크롤 버튼
+Private Sub Board_BuildScrollButtons(ws As Worksheet, ByVal unCol As Long)
+    Dim names As Variant, caps As Variant, macros As Variant, wd As Variant, i As Long
+    names = Array("BBtnUp", "BBtnDn", "BBtnHome")
+    caps = Array(ChrW(9650), ChrW(9660), "근무시간")
+    macros = Array("Board_ScrollUp", "Board_ScrollDown", "Board_ScrollHome")
+    wd = Array(26, 26, 56)
+    Dim rEdge As Double, L As Double, shp As Shape, tp As Double
+    rEdge = ws.Cells(5, unCol).Left + ws.Cells(5, unCol).Width - 4
+    tp = ws.Cells(5, 1).Top + 3
+    L = rEdge
+    For i = 2 To 0 Step -1
+        L = L - wd(i)
+        If Not ShapeExists(ws, CStr(names(i))) Then
+            Set shp = ws.Shapes.AddShape(msoShapeRoundedRectangle, L, tp, wd(i), 18)
+            shp.name = names(i)
+            shp.Fill.ForeColor.RGB = RGB(91, 143, 214)
+            shp.Line.ForeColor.RGB = RGB(255, 255, 255)
+            shp.Line.Weight = 0.75
+            shp.OnAction = macros(i)
+            With shp.TextFrame2
+                .VerticalAnchor = msoAnchorMiddle
+                .MarginLeft = 0: .MarginRight = 0: .MarginTop = 0: .MarginBottom = 0
+                .TextRange.Text = caps(i)
+                .TextRange.Font.Size = 9
+                .TextRange.Font.Bold = msoTrue
+                .TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
+                .TextRange.ParagraphFormat.Alignment = msoAlignCenter
+            End With
+        Else
+            Set shp = ws.Shapes(CStr(names(i)))
+        End If
+        shp.Left = L
+        shp.Top = tp
+        shp.Placement = xlMove
+        On Error Resume Next
+        shp.DrawingObject.PrintObject = False
+        On Error GoTo 0
+        L = L - 3
+    Next i
+End Sub
+
 ' ------------------------------------------------------------
 ' 09_배분결과(선택일) 기준으로 블록을 모두 다시 그림
 ' ------------------------------------------------------------
@@ -320,14 +463,16 @@ Public Sub Board_Refresh()
     d = BoardDate()
     Dim last As Long
     last = wsR.Cells(wsR.rows.Count, R_NAME).End(xlUp).Row
-    Dim nTask As Long, nLunch As Long, nFail As Long, nManual As Long
+    Dim nTask As Long, nLunch As Long, nFail As Long, nManual As Long, nHidden As Long
+    Dim winBot As Long
+    winBot = GRID_START_ROW + BoardWinRows() - 1
 
     If last >= 2 Then
         Dim v As Variant, dc() As Variant
         v = wsR.Range(wsR.Cells(2, 1), wsR.Cells(last, R_COLS)).Value
         ReDim dc(1 To UBound(v, 1), 1 To 2)
         Dim insp As String, col As Long, row1 As Long, nS As Long, slot As Long, typ As Long
-        Dim unOffset As Long, rg As Range, shp As Shape, k As Long, r As Long
+        Dim unOffset As Long, rg As Range, shp As Shape, k As Long, r As Long, dr1 As Long, dr2 As Long, show As Boolean
         For r = 1 To UBound(v, 1)
             dc(r, 1) = v(r, R_DCOL)
             dc(r, 2) = v(r, R_DROW)
@@ -352,14 +497,23 @@ Public Sub Board_Refresh()
                         Next k
                     End If
                     If col = 0 Then
-                        col = unCol                       ' 미지정 열에 위에서부터 쌓기
-                        row1 = GRID_START_ROW + unOffset
+                        col = unCol                       ' 미지정 열: 창 맨 위부터 쌓기 (스크롤과 무관)
+                        dr1 = GRID_START_ROW + unOffset
+                        dr2 = dr1 + nS - 1
                         unOffset = unOffset + nS
+                        show = (dr1 <= winBot)
+                        If dr2 > winBot Then dr2 = winBot
                     Else
-                        row1 = GRID_START_ROW + slot - 1
+                        show = VisibleRows(slot, nS, dr1, dr2)   ' 창 밖 구간은 잘라서 표시
                     End If
-
-                    Set rg = ws.Range(ws.Cells(row1, col), ws.Cells(row1 + nS - 1, col))
+                    dc(r, 1) = 0
+                    dc(r, 2) = 0
+                    If Not show Then
+                        nHidden = nHidden + 1
+                        GoTo nextRow
+                    End If
+                    row1 = dr1
+                    Set rg = ws.Range(ws.Cells(dr1, col), ws.Cells(dr2, col))
                     Set shp = ws.Shapes.AddShape(msoShapeRectangle, rg.Left + 1, rg.Top + 1, rg.Width - 2, rg.Height - 2)
                     shp.name = "Blk_" & (r + 1)
                     shp.Fill.ForeColor.RGB = LegendColor(LegendIdx(typ))
@@ -387,6 +541,7 @@ Public Sub Board_Refresh()
                     dc(r, 2) = row1
                 End If
             End If
+nextRow:
         Next r
         wsR.Range(wsR.Cells(2, R_DCOL), wsR.Cells(last, R_DROW)).Value = dc
     End If
@@ -401,6 +556,7 @@ Public Sub Board_Refresh()
         body = "배치 " & nTask & "건 · 점심 " & nLunch & "건 · 배치 실패 " & nFail & "건 · 수동조정 " & nManual & "건" & vbCr & _
                "블록을 클릭하면 상세, 끌어서 다른 검사자/시간으로 옮길 수 있습니다. 조정이 끝나면 [입력 완료]를 눌러 10_원데이터에 저장하세요." & vbCr & _
                "겹치거나 하루(" & TimeLabel(DispStartTime()) & "~" & TimeLabel(DispEndTime()) & ")를 벗어나면 원위치되고 07_배분로그에 기록됩니다. 연한 회색 칸 = 근무시간 밖."
+        If nHidden > 0 Then body = body & vbCr & "※ 지금 보이는 시간 구간 밖에 업무 " & nHidden & "건이 있습니다. 현황판 제목줄의 [▲][▼] 버튼으로 시간대를 옮겨 보세요."
         If ResultsStale(d) Then body = body & vbCr & "※ 배분 이후 화면의 업무가 바뀌었습니다. [자동배분]으로 다시 배분하세요."
     End If
     SetPanel "선택일 요약 - " & Format(d, "yyyy-mm-dd"), body
@@ -429,6 +585,33 @@ Private Sub Board_UpdateHeader()
         .HorizontalAlignment = xlLeft
         .VerticalAlignment = xlCenter
     End With
+
+    ' 4행 왼쪽: 지금 보이는 시간 구간 (범례 왼쪽 빈 칸)
+    Dim names() As String, unCol As Long, sc As Long
+    GetBoardCols names, unCol
+    sc = unCol - 6
+    If sc >= GRID_COL0 + 3 Then
+        Dim topS As Long, nS As Long, a As String, b As String
+        topS = BoardTopSlot()
+        nS = DispSlotCount()
+        a = SlotIndexToTimeStr(topS, DispStartTime(), SettingLong("슬롯단위_분"))
+        If topS + BoardWinRows() - 1 >= nS + 1 Then
+            b = TimeLabel(DispEndTime())
+        Else
+            b = SlotIndexToTimeStr(topS + BoardWinRows(), DispStartTime(), SettingLong("슬롯단위_분"))
+        End If
+        With ws.Range(ws.Cells(4, GRID_COL0), ws.Cells(4, sc - 1))
+            .UnMerge
+            .Merge
+            .Value = "표시 시간 " & a & " ~ " & b & "   (제목줄 ▲▼로 시간대 이동)"
+            .Font.name = "맑은 고딕"
+            .Font.Size = 9
+            .Font.Bold = False
+            .Font.Color = RGB(127, 127, 127)
+            .HorizontalAlignment = xlLeft
+            .VerticalAlignment = xlCenter
+        End With
+    End If
 End Sub
 
 Private Function LegendColor(ByVal idx As Long) As Long
@@ -554,7 +737,7 @@ Public Sub Board_CheckMoves()
             nS = CLng(wsR.Cells(r, R_NSLOT).Value)
             If nS < 1 Then nS = 1
             If c > 0 And row1 > 0 Then
-                Set rg = ws.Range(ws.Cells(row1, c), ws.Cells(row1 + nS - 1, c))
+                Set rg = ws.Range(ws.Cells(row1, c), ws.Cells(ShownLastRow(r, row1, nS), c))
                 If Abs(shp.Left - (rg.Left + 1)) > 2 Or Abs(shp.Top - (rg.Top + 1)) > 2 Then
                     HandleMove shp, r
                     Exit For        ' 처리 후 블록이 다시 그려졌으므로 중단
@@ -565,6 +748,19 @@ Public Sub Board_CheckMoves()
 bail:
     busy = False
 End Sub
+
+' 표시된 블록의 마지막 행 (창 밖으로 잘린 블록은 창 맨 아래까지)
+Private Function ShownLastRow(ByVal r As Long, ByVal row1 As Long, ByVal nS As Long) As Long
+    Dim winBot As Long, e As Long
+    winBot = GRID_START_ROW + BoardWinRows() - 1
+    e = row1 + nS - 1
+    If CLng(ThisWorkbook.Sheets(SH_RESULT).Cells(r, R_SLOT).Value) > 0 Then
+        e = SlotRow(CLng(ThisWorkbook.Sheets(SH_RESULT).Cells(r, R_SLOT).Value)) + nS - 1
+    End If
+    If e > winBot Then e = winBot
+    If e < row1 Then e = row1
+    ShownLastRow = e
+End Function
 
 Private Sub HandleMove(shp As Shape, ByVal r As Long)
     Dim ws As Worksheet, wsR As Worksheet
@@ -614,10 +810,21 @@ Private Sub HandleMove(shp As Shape, ByVal r As Long)
         End If
     Else
         newInsp = names(tc - GRID_COL0)
+        Dim winTopY As Double, winBotY As Double, cy As Double
+        winTopY = ws.Cells(GRID_START_ROW, GRID_COL0).Top
+        winBotY = ws.Cells(GRID_START_ROW + BoardWinRows(), GRID_COL0).Top
+        cy = shp.Top + shp.Height / 2
         With ws.Cells(GRID_START_ROW, GRID_COL0)
-            newSlot = CLng(Round((shp.Top - .Top) / .Height, 0)) + 1
+            If oldSlot > 0 And CLng(wsR.Cells(r, R_DROW).Value) > 0 Then
+                ' 보이는 위치에서 옮긴 칸 수만큼 시작 슬롯을 옮김 (창 위/아래로 잘린 블록도 정확)
+                newSlot = oldSlot + CLng(Round((shp.Top - (ws.Cells(CLng(wsR.Cells(r, R_DROW).Value), GRID_COL0).Top + 1)) / .Height, 0))
+            Else
+                newSlot = CLng(Round((shp.Top - .Top) / .Height, 0)) + BoardTopSlot()
+            End If
         End With
-        If newSlot < 1 Or newSlot + nS - 1 > nSlots Then
+        If cy < winTopY Or cy > winBotY Then
+            reason = "현황판의 보이는 시간 구간 밖에 놓았습니다."
+        ElseIf newSlot < 1 Or newSlot + nS - 1 > nSlots Then
             reason = "시간축(" & TimeLabel(startTime) & "~" & TimeLabel(endTime) & ") 밖입니다."
         Else
             ' 같은 날짜·같은 검사자의 다른 블록(점심 포함)과 겹침 검사

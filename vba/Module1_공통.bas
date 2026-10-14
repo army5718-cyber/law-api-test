@@ -28,8 +28,10 @@ Public Const SCR_NOTE_R As Long = 14            ' N열(숨김): 사용전검사 
 Public Const GRID_COL0 As Long = 15             ' O열 = 현황판 시간 라벨, P열부터 검사자, 마지막 = 미지정
 Public Const GRID_HEADER_ROW As Long = 6
 Public Const GRID_START_ROW As Long = 7
-Public Const BODY_ROW_H As Long = 16            ' 한 칸(30분)의 행 높이
-Public Const LEDGER_MIN_ROWS As Long = 24       ' 구역(부천/김포)별 최소 행 수 (2구역 x 24 = 현황판 48칸)
+Public Const BODY_ROW_H As Long = 14            ' 한 칸(30분)의 행 높이
+Public Const ENTRY_ROWS As Long = 2             ' 접수 1건 = 위아래 2행을 합친 칸 (글자를 크게 쓰기 위함)
+Public Const LEDGER_MIN_ENTRIES As Long = 10    ' 구역(부천/김포)별 최소 입력 줄 수 (줄당 2행 -> 2구역 = 40행)
+Public Const BOARD_WIN_ROWS As Long = 40        ' 현황판 시간대 창: 한 번에 보이는 칸 수 (접수대장 2구역과 같은 높이)
 
 ' 10_원데이터 컬럼
 Public Const RW_DATE As Long = 1       ' 접수일자
@@ -104,6 +106,7 @@ Public gRawVer As Long              ' 원데이터가 바뀔 때마다 증가
 Public gDayDate As Date             ' 화면에 그려진 날짜
 Public gDayVer As Long              ' 화면을 그릴 때의 gRawVer
 Public gDayDrawn As Boolean
+Public gBoardTop As Long            ' 현황판 시간대 창의 첫 칸(슬롯 번호, 1 = 표시시작시간). 0 = 아직 정하지 않음
 
 Public gLogCount As Long
 Public gSilent As Boolean
@@ -205,6 +208,27 @@ End Function
 
 Public Function DispSlotCount() As Long
     DispSlotCount = CalcSlotCount(DispStartTime(), DispEndTime(), SettingLong("슬롯단위_분"))
+End Function
+
+' 현황판 시간대 창 크기(칸). 시간축이 짧으면 시간축 전체(마감 행 포함)
+Public Function BoardWinRows() As Long
+    Dim n As Long
+    n = DispSlotCount() + 1
+    If n > BOARD_WIN_ROWS Then n = BOARD_WIN_ROWS
+    BoardWinRows = n
+End Function
+
+' 창의 첫 칸을 허용 범위(1 ~ 시간축 끝이 창 맨 아래에 오는 위치)로 맞춰 돌려줌. 처음에는 근무시작 약 6시간 전부터
+Public Function BoardTopSlot() As Long
+    Dim mx As Long, t As Long
+    mx = DispSlotCount() + 2 - BoardWinRows()
+    If mx < 1 Then mx = 1
+    t = gBoardTop
+    If t < 1 Then t = WorkFirstSlot() - 12
+    If t < 1 Then t = 1
+    If t > mx Then t = mx
+    gBoardTop = t
+    BoardTopSlot = t
 End Function
 
 Public Function WorkFirstSlot() As Long
@@ -587,6 +611,7 @@ End Sub
 ' 오류로 중단되어 FastBegin 만 남았을 때 강제로 원상복구
 Public Sub FastReset()
     sDepth = 0
+    gBoardTop = 0
     Application.Calculation = xlCalculationAutomatic
     Application.EnableEvents = True
     Application.ScreenUpdating = True

@@ -15,6 +15,7 @@ Option Explicit
 '   저장하지 않고 날짜를 옮기면 입력한 내용이 사라집니다 (확인창이 뜹니다).
 ' ============================================================
 
+Private sViewDone As Boolean
 Private Const TITLE_TEXT As String = "입력 후 [입력 완료]를 눌러야 10_원데이터에 저장됩니다"
 
 ' ------------------------------------------------------------
@@ -79,7 +80,7 @@ Public Function ReadScreen(rec() As TaskRec) As Long
     For s = 1 To nSec
         zone = secLab(s)
         If zone = "기타지역" Then zone = "미분류"
-        For r = secTop(s) To secBot(s)
+        For r = secTop(s) To secBot(s) Step ENTRY_ROWS      ' 접수 1건 = 위아래 2행(병합) -> 윗 행이 대표
             ri = r - top1 + 1
             For side = 0 To 1
                 If side = 0 Then c0 = 2 Else c0 = 8
@@ -312,11 +313,32 @@ Public Sub Day_Render()
     SetStatus
 
     If ActiveSheet.name <> SH_DAY Then ws.Activate
+    ApplyDayView
 fail:
     Dim em As String
     If Err.Number <> 0 Then em = Err.Description
     FastEnd
     If em <> "" Then Say "일일대장을 만드는 중 오류가 발생했습니다: " & em, vbCritical
+End Sub
+
+' 화면 고정: 1~6행(버튼/머리글)을 고정하고 처음 한 번만 90% 로 맞춤. 접수대장은 제자리, 현황판은 시간대 창만 스크롤([▲][▼])
+Private Sub ApplyDayView()
+    On Error Resume Next
+    If ActiveSheet.name <> SH_DAY Then Exit Sub
+    With ActiveWindow
+        If Not (.FreezePanes And .SplitRow = GRID_HEADER_ROW And .SplitColumn = 0) Then
+            .FreezePanes = False
+            .ScrollRow = 1
+            .ScrollColumn = 1
+            .SplitColumn = 0
+            .SplitRow = GRID_HEADER_ROW
+            .FreezePanes = True
+        End If
+        If Not sViewDone Then
+            .Zoom = 90
+            sViewDone = True
+        End If
+    End With
 End Sub
 
 ' 접수대장(A~N열)을 그리고 비고 행 번호를 돌려줌
@@ -330,7 +352,7 @@ Private Function DrawLedger(ws As Worksheet, ByVal d As Date) As Long
     End With
 
     Dim w As Variant, c As Long
-    w = Array(5, 18, 7.5, 8, 6.5, 9.5, 7.5, 18, 7.5, 8, 6.5, 7.5)
+    w = Array(5, 19, 8, 8.5, 7, 9.5, 8, 19, 8, 8.5, 7, 8)
     For c = 0 To 11
         ws.Columns(c + 1).ColumnWidth = w(c)
     Next c
@@ -403,7 +425,7 @@ Private Function DrawLedger(ws As Worksheet, ByVal d As Date) As Long
     lastZone = 2
     If hasOther Then lastZone = 3
 
-    Dim curRow As Long, z As Long, nR As Long, nP As Long, nRows As Long, k As Long, r As Long
+    Dim curRow As Long, z As Long, nR As Long, nP As Long, nRows As Long, k As Long, r As Long, nEnt As Long, e As Long
     Dim regIdx() As Long, preIdx() As Long
     Dim out() As Variant
     curRow = SCR_FIRST_ROW
@@ -424,29 +446,32 @@ Private Function DrawLedger(ws As Worksheet, ByVal d As Date) As Long
                 End If
             End If
         Next k
-        nRows = LEDGER_MIN_ROWS
-        If nR + 2 > nRows Then nRows = nR + 2
-        If nP + 2 > nRows Then nRows = nP + 2
+        nEnt = LEDGER_MIN_ENTRIES
+        If nR + 1 > nEnt Then nEnt = nR + 1
+        If nP + 1 > nEnt Then nEnt = nP + 1
+        nRows = nEnt * ENTRY_ROWS
 
         ReDim out(1 To nRows, 1 To SCR_NOTE_R)
         For r = 1 To nR
             i = regIdx(r)
-            out(r, 2) = v(i, RW_NAME)
-            out(r, 3) = v(i, RW_CAP)
-            out(r, 4) = v(i, RW_REG)
-            out(r, 5) = v(i, RW_TIME)
-            out(r, 6) = v(i, RW_FEE)
-            out(r, 7) = v(i, RW_INSP)
-            out(r, SCR_NOTE_L) = v(i, RW_NOTE)
+            e = (r - 1) * ENTRY_ROWS + 1               ' 건마다 윗 행에만 값을 넣음 (아래 행은 병합됨)
+            out(e, 2) = v(i, RW_NAME)
+            out(e, 3) = v(i, RW_CAP)
+            out(e, 4) = v(i, RW_REG)
+            out(e, 5) = v(i, RW_TIME)
+            out(e, 6) = v(i, RW_FEE)
+            out(e, 7) = v(i, RW_INSP)
+            out(e, SCR_NOTE_L) = v(i, RW_NOTE)
         Next r
         For r = 1 To nP
             i = preIdx(r)
-            out(r, 8) = v(i, RW_NAME)
-            out(r, 9) = v(i, RW_CAP)
-            out(r, 10) = v(i, RW_REG)
-            out(r, 11) = v(i, RW_TIME)
-            out(r, 12) = v(i, RW_INSP)
-            out(r, SCR_NOTE_R) = v(i, RW_NOTE)
+            e = (r - 1) * ENTRY_ROWS + 1
+            out(e, 8) = v(i, RW_NAME)
+            out(e, 9) = v(i, RW_CAP)
+            out(e, 10) = v(i, RW_REG)
+            out(e, 11) = v(i, RW_TIME)
+            out(e, 12) = v(i, RW_INSP)
+            out(e, SCR_NOTE_R) = v(i, RW_NOTE)
         Next r
         ws.Range(ws.Cells(curRow, 1), ws.Cells(curRow + nRows - 1, SCR_NOTE_R)).Value = out
         FormatDaySection ws, curRow, nRows, IIf(z = 3, "기타지역", zones(z))
@@ -502,7 +527,42 @@ Private Sub FormatDaySection(ws As Worksheet, ByVal sRow As Long, ByVal nRows As
     rg.HorizontalAlignment = xlCenter
     rg.VerticalAlignment = xlCenter
     rg.Font.Bold = True
-    rg.Font.Size = 11
+    rg.Font.Size = 12
+
+    ws.rows(sRow & ":" & eRow).RowHeight = BODY_ROW_H
+
+    ' 본문 글자: 한 건이 위아래 2행이므로 크게 (12pt). 서식은 구역 전체에 한 번에 준 뒤 건마다 병합
+    With ws.Range(ws.Cells(sRow, 2), ws.Cells(eRow, 12))
+        .Font.Size = 12
+        .VerticalAlignment = xlCenter
+    End With
+    ws.Range(ws.Cells(sRow, 8), ws.Cells(eRow, 12)).Font.Color = RGB(255, 0, 0)
+    ws.Range(ws.Cells(sRow, 4), ws.Cells(eRow, 5)).HorizontalAlignment = xlCenter
+    ws.Range(ws.Cells(sRow, 10), ws.Cells(eRow, 11)).HorizontalAlignment = xlCenter
+    ws.Range(ws.Cells(sRow, 7), ws.Cells(eRow, 7)).HorizontalAlignment = xlCenter
+    ws.Range(ws.Cells(sRow, 12), ws.Cells(eRow, 12)).HorizontalAlignment = xlCenter
+    ws.Range(ws.Cells(sRow, 5), ws.Cells(eRow, 5)).NumberFormat = "h:mm"
+    ws.Range(ws.Cells(sRow, 11), ws.Cells(eRow, 11)).NumberFormat = "h:mm"
+    ws.Range(ws.Cells(sRow, 6), ws.Cells(eRow, 6)).NumberFormat = "#,##0"
+    ws.Range(ws.Cells(sRow, 6), ws.Cells(eRow, 6)).Font.Size = 10
+    ws.Range(ws.Cells(sRow, 6), ws.Cells(eRow, 6)).HorizontalAlignment = xlRight
+    ws.Range(ws.Cells(sRow, 3), ws.Cells(eRow, 3)).HorizontalAlignment = xlRight
+    ws.Range(ws.Cells(sRow, 9), ws.Cells(eRow, 9)).HorizontalAlignment = xlRight
+    ' 긴 상호/지역/검사자 이름은 줄이지 않고 칸에 맞춰 축소 표시
+    ws.Range(ws.Cells(sRow, 2), ws.Cells(eRow, 2)).ShrinkToFit = True
+    ws.Range(ws.Cells(sRow, 8), ws.Cells(eRow, 8)).ShrinkToFit = True
+    ws.Range(ws.Cells(sRow, 4), ws.Cells(eRow, 4)).ShrinkToFit = True
+    ws.Range(ws.Cells(sRow, 10), ws.Cells(eRow, 10)).ShrinkToFit = True
+    ws.Range(ws.Cells(sRow, 7), ws.Cells(eRow, 7)).ShrinkToFit = True
+    ws.Range(ws.Cells(sRow, 12), ws.Cells(eRow, 12)).ShrinkToFit = True
+
+    ' 건마다 B~L열을 위아래 2행씩 병합
+    Dim r As Long, c As Long
+    For r = sRow To eRow Step ENTRY_ROWS
+        For c = 2 To 12
+            ws.Range(ws.Cells(r, c), ws.Cells(r + ENTRY_ROWS - 1, c)).Merge
+        Next c
+    Next r
 
     Set rg = ws.Range(ws.Cells(sRow, 1), ws.Cells(eRow, 12))
     rg.Borders.LineStyle = xlContinuous
@@ -513,20 +573,6 @@ Private Sub FormatDaySection(ws As Worksheet, ByVal sRow As Long, ByVal nRows As
     rg.Borders(xlEdgeRight).Weight = xlMedium
     ws.Range(ws.Cells(sRow, 8), ws.Cells(eRow, 8)).Borders(xlEdgeLeft).Weight = xlMedium
     ws.Range(ws.Cells(sRow, 2), ws.Cells(eRow, 2)).Borders(xlEdgeLeft).Weight = xlMedium
-
-    ws.rows(sRow & ":" & eRow).RowHeight = BODY_ROW_H
-    ws.Range(ws.Cells(sRow, 8), ws.Cells(eRow, 12)).Font.Color = RGB(255, 0, 0)
-    ws.Range(ws.Cells(sRow, 4), ws.Cells(eRow, 5)).HorizontalAlignment = xlCenter
-    ws.Range(ws.Cells(sRow, 10), ws.Cells(eRow, 11)).HorizontalAlignment = xlCenter
-    ws.Range(ws.Cells(sRow, 7), ws.Cells(eRow, 7)).HorizontalAlignment = xlCenter
-    ws.Range(ws.Cells(sRow, 12), ws.Cells(eRow, 12)).HorizontalAlignment = xlCenter
-    ws.Range(ws.Cells(sRow, 5), ws.Cells(eRow, 5)).NumberFormat = "h:mm"
-    ws.Range(ws.Cells(sRow, 11), ws.Cells(eRow, 11)).NumberFormat = "h:mm"
-    ws.Range(ws.Cells(sRow, 6), ws.Cells(eRow, 6)).NumberFormat = "#,##0"
-    ws.Range(ws.Cells(sRow, 6), ws.Cells(eRow, 6)).Font.Size = 8
-    ws.Range(ws.Cells(sRow, 6), ws.Cells(eRow, 6)).HorizontalAlignment = xlRight
-    ws.Range(ws.Cells(sRow, 3), ws.Cells(eRow, 3)).HorizontalAlignment = xlRight
-    ws.Range(ws.Cells(sRow, 9), ws.Cells(eRow, 9)).HorizontalAlignment = xlRight
 End Sub
 
 ' ============================================================
@@ -535,7 +581,7 @@ End Sub
 Private Function DesiredPrintArea(ws As Worksheet, ByVal noteRow As Long) As String
     Dim lastRow As Long
     lastRow = noteRow
-    If lastRow < GRID_START_ROW + DispSlotCount() Then lastRow = GRID_START_ROW + DispSlotCount()
+    If lastRow < GRID_START_ROW + BoardWinRows() Then lastRow = GRID_START_ROW + BoardWinRows()
     DesiredPrintArea = ws.Range(ws.Cells(4, 1), ws.Cells(lastRow, BoardLastCol())).Address
 End Function
 
