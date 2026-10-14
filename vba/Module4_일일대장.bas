@@ -15,7 +15,7 @@ Option Explicit
 '   저장하지 않고 날짜를 옮기면 입력한 내용이 사라집니다 (확인창이 뜹니다).
 ' ============================================================
 
-Private Const TITLE_TEXT As String = "일일 접수대장 + 배분현황판  |  이 화면에서 입력 -> [입력 완료]를 눌러야 10_원데이터에 저장됩니다 (인쇄: 4행부터, A4 가로)"
+Private Const TITLE_TEXT As String = "입력 후 [입력 완료]를 눌러야 10_원데이터에 저장됩니다"
 
 ' ------------------------------------------------------------
 ' 화면 읽기
@@ -158,13 +158,19 @@ Public Sub SetStatus()
     Dim prevEv As Boolean
     prevEv = Application.EnableEvents
     Application.EnableEvents = False
-    If gDirty Then
-        ws.Cells(1, 1).Value = TITLE_TEXT & "      ● 저장 안 됨"
-        ws.Cells(1, 1).Font.Color = RGB(192, 0, 0)
-    Else
-        ws.Cells(1, 1).Value = TITLE_TEXT
-        ws.Cells(1, 1).Font.Color = RGB(31, 56, 100)
-    End If
+    With ws.Cells(2, 1)
+        .Font.name = "맑은 고딕"
+        .Font.Size = 10
+        .Font.Bold = True
+        .VerticalAlignment = xlCenter
+        If gDirty Then
+            .Value = "● 저장 안 됨 - [자동배분]으로 현황판을 갱신하고 [입력 완료]로 저장하세요"
+            .Font.Color = RGB(192, 0, 0)
+        Else
+            .Value = TITLE_TEXT
+            .Font.Color = RGB(127, 127, 127)
+        End If
+    End With
     Application.EnableEvents = prevEv
 End Sub
 
@@ -257,11 +263,11 @@ Public Sub Day_BuildChrome()
     caps = Array(ChrW(9664) & " 이전일", "오늘", "다음일 " & ChrW(9654), ChrW(9638) & " 달력", "자동배분", "입력 완료", "되돌리기", "인쇄", "PDF 저장")
     macros = Array("Day_Prev", "Day_Today", "Day_Next", "Day_Pick", "RunAutoAssign", "Day_Commit", "Day_Revert", "Day_PrintForm", "Day_SavePdf")
     cols = Array(RGB(47, 117, 181), RGB(47, 117, 181), RGB(47, 117, 181), RGB(47, 117, 181), _
-                 RGB(31, 56, 100), RGB(0, 140, 70), RGB(128, 96, 0), RGB(89, 89, 89), RGB(89, 89, 89))
+                 RGB(31, 56, 100), RGB(0, 112, 192), RGB(127, 127, 127), RGB(89, 89, 89), RGB(89, 89, 89))
     Dim L As Double, shp As Shape
-    L = ws.Cells(2, 1).Left + 4
+    L = ws.Cells(1, 1).Left + 3
     For i = 0 To 8
-        Set shp = ws.Shapes.AddShape(msoShapeRoundedRectangle, L, ws.Cells(2, 1).Top + 2, 62, 22)
+        Set shp = ws.Shapes.AddShape(msoShapeRoundedRectangle, L, ws.Cells(1, 1).Top + 3, 83, 24)
         shp.name = names(i)
         shp.Fill.ForeColor.RGB = cols(i)
         shp.Line.Visible = msoFalse
@@ -271,12 +277,12 @@ Public Sub Day_BuildChrome()
             .VerticalAnchor = msoAnchorMiddle
             .MarginLeft = 1: .MarginRight = 1
             .TextRange.Text = caps(i)
-            .TextRange.Font.Size = 9
+            .TextRange.Font.Size = 11
             .TextRange.Font.Bold = msoTrue
             .TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
             .TextRange.ParagraphFormat.Alignment = msoAlignCenter
         End With
-        L = L + 65
+        L = L + 87.5
     Next i
 End Sub
 
@@ -330,7 +336,11 @@ Private Function DrawLedger(ws As Worksheet, ByVal d As Date) As Long
     Next c
     ws.Range("M:N").Hidden = True
 
-    ws.rows(4).RowHeight = 26
+    ' 1행 = 버튼 줄, 2행 = 상태 문구 + 현황판 날짜, 3행 숨김, 4행 = 날짜/범례, 5행 = 제목 막대, 6행 = 머리글
+    ws.rows(1).RowHeight = 30
+    ws.rows(2).RowHeight = 22
+    ws.rows(3).Hidden = True
+    ws.rows(4).RowHeight = 20
     ws.rows(5).RowHeight = 24
     ws.rows(6).RowHeight = 24
     With ws.Range("H4:L4")
@@ -338,7 +348,7 @@ Private Function DrawLedger(ws As Worksheet, ByVal d As Date) As Long
         .Value = Format(d, "m월 d일") & "  (" & WeekdayKo(d) & ")"
         .HorizontalAlignment = xlRight
         .Font.Bold = True
-        .Font.Size = 14
+        .Font.Size = 13
     End With
     ws.Range("A5:G5").Merge
     ws.Range("A5").Value = "정기검사"
@@ -347,7 +357,9 @@ Private Function DrawLedger(ws As Worksheet, ByVal d As Date) As Long
     ws.Range("A5:L5").HorizontalAlignment = xlCenter
     ws.Range("A5:L5").Font.Bold = True
     ws.Range("A5:L5").Font.Size = 14
-    ws.Range("H5").Font.Color = RGB(255, 0, 0)
+    ws.Range("A5:L5").Font.Color = RGB(255, 255, 255)
+    ws.Range("A5:G5").Interior.Color = RGB(31, 56, 100)
+    ws.Range("H5:L5").Interior.Color = RGB(91, 143, 214)
     ws.Range("A6:L6").Value = Array("구분", "상호", "용량", "지역", "시간", "수수료", "검사자", "상호", "용량", "지역", "시간", "검사자")
     ws.Range("A6:L6").HorizontalAlignment = xlCenter
     ws.Range("A6:L6").Font.Bold = True
@@ -652,8 +664,7 @@ Sub Day_Commit()
         End If
     Next i
     If msg <> "" Then
-        Say "입력을 확인해 주세요. 저장하지 않았습니다." & msg, vbExclamation
-        Exit Sub
+        If Not Ask("상호가 비어 있는 줄이 있습니다." & msg & vbCrLf & vbCrLf & "그대로 저장할까요? (아니오 = 돌아가서 고치기)") Then Exit Sub
     End If
     If unknown <> "" Then
         If Not Ask("01_검사자명단에 없는 검사자 이름이 있습니다." & unknown & vbCrLf & vbCrLf & "그대로 저장할까요?") Then Exit Sub

@@ -105,7 +105,7 @@ Public Function CountResults(ByVal d As Date) As Long
     last = ResLast(ws)
     If last < 2 Then Exit Function
     Dim v As Variant, r As Long, n As Long
-    v = ws.Range(ws.Cells(2, 1), ws.Cells(last, R_DATE)).Value
+    v = ws.Range(ws.Cells(2, 1), ws.Cells(last, R_ID)).Value
     For r = 1 To UBound(v, 1)
         If IsDate(v(r, 1)) Then
             If DateValue(v(r, 1)) = d Then n = n + 1
@@ -156,20 +156,20 @@ Private Sub BufAdd(ByVal taskKey As Long, ByVal nm As String, ByVal cap As Strin
         ByVal durMin As String, ByVal tstr As String, ByVal insp As String, ByVal slotIdx As Long, _
         ByVal nS As Long, ByVal typ As Long, ByVal fee As String)
     bufN = bufN + 1
-    If bufN > UBound(buf, 1) Then ReDim Preserve buf(1 To UBound(buf, 1) + 64, 1 To R_COLS)
-    buf(bufN, R_DATE) = mDate
-    buf(bufN, R_ID) = taskKey
-    buf(bufN, R_NAME) = nm
-    buf(bufN, R_CAP) = cap
-    buf(bufN, R_REGION) = reg
-    buf(bufN, R_DUR) = durMin
-    buf(bufN, R_TIME) = tstr
-    buf(bufN, R_INSP) = insp
-    buf(bufN, R_SLOT) = slotIdx
-    If slotIdx > 0 Then buf(bufN, R_START) = SlotIndexToTimeStr(slotIdx, mStart, mSlotMin) Else buf(bufN, R_START) = ""
-    buf(bufN, R_NSLOT) = nS
-    buf(bufN, R_TYPE) = typ
-    buf(bufN, R_FEE) = fee
+    If bufN > UBound(buf, 2) Then ReDim Preserve buf(1 To R_COLS, 1 To UBound(buf, 2) + 64)
+    buf(R_DATE, bufN) = mDate
+    buf(R_ID, bufN) = taskKey
+    buf(R_NAME, bufN) = nm
+    buf(R_CAP, bufN) = cap
+    buf(R_REGION, bufN) = reg
+    buf(R_DUR, bufN) = durMin
+    buf(R_TIME, bufN) = tstr
+    buf(R_INSP, bufN) = insp
+    buf(R_SLOT, bufN) = slotIdx
+    If slotIdx > 0 Then buf(R_START, bufN) = SlotIndexToTimeStr(slotIdx, mStart, mSlotMin) Else buf(R_START, bufN) = ""
+    buf(R_NSLOT, bufN) = nS
+    buf(R_TYPE, bufN) = typ
+    buf(R_FEE, bufN) = fee
 End Sub
 
 Private Sub BufFlush()
@@ -184,7 +184,7 @@ Private Sub BufFlush()
     ReDim w(1 To bufN, 1 To R_COLS)
     For i = 1 To bufN
         For c = 1 To R_COLS
-            w(i, c) = buf(i, c)
+            w(i, c) = buf(c, i)
         Next c
     Next i
     ws.Range(ws.Cells(first, 1), ws.Cells(first + bufN - 1, R_COLS)).Value = w
@@ -248,7 +248,7 @@ Public Function AutoAssignDate(ByVal d As Date, ByVal quiet As Boolean) As Boole
     ReDim occupied(1 To nInsp, 1 To nSlots)
     ReDim lastRegion(1 To nInsp)
     ReDim taskCount(1 To nInsp)
-    ReDim buf(1 To 64, 1 To R_COLS)
+    ReDim buf(1 To R_COLS, 1 To 64)
     bufN = 0
     placedTotal = 0
     unassignedTotal = 0

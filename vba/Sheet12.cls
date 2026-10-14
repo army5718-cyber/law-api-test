@@ -22,8 +22,8 @@ Private Sub Worksheet_SelectionChange(ByVal Target As Range)
 End Sub
 
 Private Sub Worksheet_BeforeDoubleClick(ByVal Target As Range, Cancel As Boolean)
-    ' 날짜(H4:L4)를 더블클릭하면 달력으로 날짜를 고릅니다.
-    If Not Intersect(Target, Me.Range("H4:L4")) Is Nothing Then
+    ' 날짜(H4:L4 또는 현황판 위 큰 날짜)를 더블클릭하면 달력으로 날짜를 고릅니다.
+    If Not Intersect(Target, Me.Range("H4:L4,O2:R2")) Is Nothing Then
         Cancel = True
         Day_Pick
     End If

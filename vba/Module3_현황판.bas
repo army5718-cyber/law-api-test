@@ -223,7 +223,8 @@ Public Sub Board_BuildChrome()
     Dim navy As Long
     navy = RGB(31, 56, 100)
 
-    With ws.Range(ws.Cells(4, GRID_COL0), ws.Cells(4, unCol))
+    ' 제목 막대 (5행, 남색)
+    With ws.Range(ws.Cells(5, GRID_COL0), ws.Cells(5, unCol))
         .Merge
         .Interior.Color = navy
         .Font.name = "맑은 고딕"
@@ -234,33 +235,43 @@ Public Sub Board_BuildChrome()
         .VerticalAlignment = xlCenter
         .IndentLevel = 1
     End With
-    ws.Cells(4, GRID_COL0).Value = "KESCO 검사 업무 배분 현황판"
+    Board_UpdateHeader
 
-    Dim labels As Variant, colors As Variant, i As Long
+    ' 범례 (4행, 현황판 오른쪽 끝에 맞춰 7칸)
+    Dim labels As Variant, i As Long, startCol As Long
     labels = Array("검사자+시간", "시간만", "검사자만", "미지정", "점심", "수동", "배치실패")
-    colors = Array(RGB(95, 99, 185), RGB(0, 176, 80), RGB(17, 85, 204), RGB(207, 158, 0), _
-                   RGB(63, 127, 133), RGB(112, 48, 160), RGB(160, 40, 40))
-    With ws.Range(ws.Cells(5, GRID_COL0 + 1), ws.Cells(5, GRID_COL0 + 7))
-        .Value = labels
-        .Font.name = "맑은 고딕"
-        .Font.Size = 8
-        .Font.Bold = True
-        .Font.Color = RGB(255, 255, 255)
-        .HorizontalAlignment = xlCenter
-        .VerticalAlignment = xlCenter
-        .WrapText = True
-        .Borders(xlInsideVertical).LineStyle = xlContinuous
-        .Borders(xlInsideVertical).Color = RGB(255, 255, 255)
-    End With
+    startCol = unCol - 6
+    If startCol < GRID_COL0 + 1 Then startCol = GRID_COL0 + 1
     For i = 0 To 6
-        ws.Cells(5, GRID_COL0 + 1 + i).Interior.Color = colors(i)
+        If startCol + i <= unCol Then
+            With ws.Cells(4, startCol + i)
+                .Value = labels(i)
+                .Interior.Color = LegendColor(i + 1)
+                .Font.name = "맑은 고딕"
+                .Font.Size = 8
+                .Font.Bold = True
+                .Font.Color = RGB(255, 255, 255)
+                .HorizontalAlignment = xlCenter
+                .VerticalAlignment = xlCenter
+                .ShrinkToFit = True
+                .Borders(xlEdgeLeft).LineStyle = xlContinuous
+                .Borders(xlEdgeLeft).Color = RGB(255, 255, 255)
+                .Borders(xlEdgeRight).LineStyle = xlContinuous
+                .Borders(xlEdgeRight).Color = RGB(255, 255, 255)
+            End With
+        End If
     Next i
 
+    ' 상세 패널: 버튼 줄 오른쪽 ~ 현황판 끝, 1~2행 (인쇄 영역 밖)
     Dim shp As Shape
     Dim pLeft As Double, pTop As Double, pW As Double, pH As Double
     pLeft = ws.Cells(1, GRID_COL0).Left
+    If ShapeExists(ws, "DBtnPdf") Then
+        If ws.Shapes("DBtnPdf").Left + ws.Shapes("DBtnPdf").Width + 6 > pLeft Then pLeft = ws.Shapes("DBtnPdf").Left + ws.Shapes("DBtnPdf").Width + 6
+    End If
     pTop = ws.Cells(1, 1).Top + 1
     pW = ws.Cells(1, unCol + 1).Left - pLeft
+    If pW < 160 Then pW = 160
     pH = ws.Cells(4, 1).Top - pTop - 2
     If Not ShapeExists(ws, "Panel") Then
         Set shp = ws.Shapes.AddShape(msoShapeRectangle, pLeft, pTop, pW, pH)
@@ -351,7 +362,7 @@ Public Sub Board_Refresh()
                     Set rg = ws.Range(ws.Cells(row1, col), ws.Cells(row1 + nS - 1, col))
                     Set shp = ws.Shapes.AddShape(msoShapeRectangle, rg.Left + 1, rg.Top + 1, rg.Width - 2, rg.Height - 2)
                     shp.name = "Blk_" & (r + 1)
-                    shp.Fill.ForeColor.RGB = ws.Cells(5, GRID_COL0 + LegendIdx(typ)).Interior.Color
+                    shp.Fill.ForeColor.RGB = LegendColor(LegendIdx(typ))
                     If typ = 0 Then
                         shp.Line.ForeColor.RGB = RGB(255, 255, 255)
                         shp.Line.DashStyle = msoLineDash
@@ -381,7 +392,7 @@ Public Sub Board_Refresh()
     End If
 
     ' 제목/요약
-    ws.Cells(4, GRID_COL0).Value = "KESCO 검사 업무 배분 현황판 - " & Format(d, "yyyy년 m월 d일") & " (" & WeekdayKo(d) & ")"
+    Board_UpdateHeader
     Dim body As String
     If nTask + nLunch + nFail = 0 Then
         body = "이 날짜의 배분 결과가 없습니다. 오늘 이후 날짜는 열 때 자동으로 배분되고, 지난 날짜는 [자동배분] 버튼을 누르세요." & vbCr & _
@@ -399,6 +410,38 @@ bail:
     FastEnd
     If errMsg <> "" Then Say "현황판을 그리는 중 오류가 발생했습니다: " & errMsg, vbCritical
 End Sub
+
+' 현황판 제목 막대(5행) + 날짜(2행 O열)
+Private Sub Board_UpdateHeader()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets(SH_DAY)
+    Dim d As Date
+    d = BoardDate()
+    ws.Cells(5, GRID_COL0).Value = "KESCO 검사 업무 배분 현황판 - " & Format(d, "yyyy년 m월 d일") & " (" & WeekdayKo(d) & ")"
+    With ws.Range(ws.Cells(2, GRID_COL0), ws.Cells(2, GRID_COL0 + 3))
+        .UnMerge
+        .Merge
+        .Value = Format(d, "m월 d일") & "  (" & WeekdayKo(d) & ")"
+        .Font.name = "맑은 고딕"
+        .Font.Size = 16
+        .Font.Bold = True
+        .Font.Color = RGB(31, 56, 100)
+        .HorizontalAlignment = xlLeft
+        .VerticalAlignment = xlCenter
+    End With
+End Sub
+
+Private Function LegendColor(ByVal idx As Long) As Long
+    Select Case idx
+        Case 1: LegendColor = RGB(95, 99, 185)
+        Case 2: LegendColor = RGB(0, 176, 80)
+        Case 3: LegendColor = RGB(17, 85, 204)
+        Case 4: LegendColor = RGB(207, 158, 0)
+        Case 5: LegendColor = RGB(63, 127, 133)
+        Case 6: LegendColor = RGB(112, 48, 160)
+        Case Else: LegendColor = RGB(160, 40, 40)
+    End Select
+End Function
 
 Private Function BlockText(v As Variant, ByVal r As Long, ByVal nS As Long, ByVal typ As Long) As String
     Dim nm As String, mark As String
