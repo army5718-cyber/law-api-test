@@ -7,8 +7,13 @@ Attribute VB_Exposed = True
 Attribute VB_TemplateDerived = False
 Attribute VB_Customizable = True
 Private Sub Worksheet_Activate()
-    ' 시트를 열 때마다 선택일 기준으로 접수대장과 배분현황판을 다시 만듭니다.
-    Day_Render
+    ' 날짜나 원데이터가 바뀐 경우에만 다시 그립니다 (입력 중인 내용은 유지).
+    Day_Activate
+End Sub
+
+Private Sub Worksheet_Change(ByVal Target As Range)
+    ' 접수대장 칸을 고치면 '저장 안 됨' 표시
+    Day_OnChange Target
 End Sub
 
 Private Sub Worksheet_SelectionChange(ByVal Target As Range)

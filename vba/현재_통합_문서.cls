@@ -7,8 +7,9 @@ Attribute VB_Exposed = True
 Attribute VB_TemplateDerived = False
 Attribute VB_Customizable = True
 Private Sub Workbook_Open()
-    ' 파일을 열면 오늘 날짜의 일일대장 + 배분현황판을 보여줍니다.
+    ' 파일을 열면 오늘 날짜의 일일대장(입력 화면) + 배분현황판을 보여줍니다.
     On Error Resume Next
+    FastReset
     SetBoardDate Date
     Day_Render
 End Sub

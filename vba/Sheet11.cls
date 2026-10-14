@@ -7,6 +7,6 @@ Attribute VB_Exposed = True
 Attribute VB_TemplateDerived = False
 Attribute VB_Customizable = True
 Private Sub Worksheet_Change(ByVal Target As Range)
-    ' 원데이터에 입력하면 관리번호 / 권역 / 검사자 이름을 자동으로 정리합니다.
-    Erp_OnRawChange Target
+    ' 10_원데이터를 직접 고친 경우: 캐시 갱신 + 관리번호/권역/검사자 이름 자동 정리
+    Raw_OnChange Target
 End Sub
