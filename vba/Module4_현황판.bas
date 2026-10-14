@@ -115,7 +115,7 @@ Public Sub RebuildGrid(ByVal silent As Boolean)
     If HasInspectors(inspectors) Then n = UBound(inspectors) - LBound(inspectors) + 1 Else n = 0
 
     ' 현황판 영역 초기화 (N열 이후만)
-    With ws.Range(ws.Cells(4, GRID_COL0), ws.Cells(GRID_START_ROW + 30, GRID_COL0 + 40))
+    With ws.Range(ws.Cells(4, GRID_COL0), ws.Cells(GRID_START_ROW + 60, GRID_COL0 + 40))
         .UnMerge
         .Clear
         .Font.name = "맑은 고딕"
@@ -144,19 +144,22 @@ Public Sub RebuildGrid(ByVal silent As Boolean)
 
     ' 시간 슬롯 행 : 02_설정 기준으로 시간 라벨과 점선 격자를 그림
     Dim startTime As Date, endTime As Date, slotMin As Long, nSlots As Long
-    startTime = SettingTime("운영시작시간")
-    endTime = SettingTime("운영종료시간")
+    startTime = DispStartTime()          ' 시간축 = 24시간 (00:00 ~ 24:00)
+    endTime = DispEndTime()
     slotMin = SettingLong("슬롯단위_분")
     nSlots = CalcSlotCount(startTime, endTime, slotMin)
+    Dim workLo As Long, workHi As Long
+    workLo = WorkFirstSlot()
+    workHi = WorkLastSlot()
 
     Dim s As Long, rowIdx As Long
     For s = 1 To nSlots
         rowIdx = GRID_START_ROW + s - 1
-        ws.rows(rowIdx).RowHeight = 24
+        ws.rows(rowIdx).RowHeight = BODY_ROW_H
         With ws.Cells(rowIdx, GRID_COL0)
             .NumberFormat = "@"
             .Value = SlotIndexToTimeStr(s, startTime, slotMin)
-            .Font.name = "맑은 고딕": .Font.Size = 9: .Font.Bold = True
+            .Font.name = "맑은 고딕": .Font.Size = 8: .Font.Bold = True
             .Font.Color = navy
             .Interior.Color = paleBlue
             .HorizontalAlignment = xlRight
@@ -171,16 +174,16 @@ Public Sub RebuildGrid(ByVal silent As Boolean)
             .Borders(xlEdgeRight).Color = RGB(191, 207, 224)
             .Borders(xlEdgeBottom).LineStyle = xlDot            ' 30분 점선
             .Borders(xlEdgeBottom).Color = dotBlue
+            If s < workLo Or s > workHi Then .Interior.Color = RGB(244, 244, 244)   ' 근무시간 밖은 연한 회색
         End With
     Next s
 
-    ' 마감 행 (배정 불가, 운영 종료선 표시)
+    ' 마감 행 (배정 불가, 하루 끝 선 표시). 행 높이는 접수대장 비고 행과 공유하므로 건드리지 않음
     rowIdx = GRID_START_ROW + nSlots
-    ws.rows(rowIdx).RowHeight = 24
     With ws.Cells(rowIdx, GRID_COL0)
         .NumberFormat = "@"
-        .Value = Format(endTime, "hh:nn")
-        .Font.name = "맑은 고딕": .Font.Size = 9: .Font.Bold = True
+        .Value = TimeLabel(endTime)
+        .Font.name = "맑은 고딕": .Font.Size = 8: .Font.Bold = True
         .Font.Color = RGB(128, 128, 128)
         .Interior.Color = paleBlue
         .HorizontalAlignment = xlRight
@@ -191,7 +194,7 @@ Public Sub RebuildGrid(ByVal silent As Boolean)
         .Borders(xlEdgeBottom).LineStyle = xlContinuous
         .Borders(xlEdgeBottom).Color = navy
     End With
-    ws.Cells(rowIdx, GRID_COL0 + 1).Value = "운영 종료"
+    ws.Cells(rowIdx, GRID_COL0 + 1).Value = "하루 끝"
     ws.Cells(rowIdx, GRID_COL0 + 1).Font.Color = RGB(128, 128, 128)
     ws.Cells(rowIdx, GRID_COL0 + 1).Font.Size = 8
 
@@ -474,7 +477,7 @@ Public Sub Board_ShowSummary()
     Else
         body = "배치 " & nTask & "건 · 점심 " & nLunch & "건 · 배치 실패 " & nFail & "건 · 수동조정 " & nManual & "건" & vbCr & _
                "블록을 클릭하면 상세가 표시되고, 끌어서 다른 검사자/시간으로 옮길 수 있습니다. 조정 후 [결과 반영]을 누르면 원데이터 검사자에 기록됩니다." & vbCr & _
-               "겹치거나 운영시간(~" & Format(SettingTime("운영종료시간"), "hh:nn") & ")을 넘으면 원위치되고 07_배분로그에 기록됩니다."
+               "겹치거나 하루(" & TimeLabel(DispStartTime()) & "~" & TimeLabel(DispEndTime()) & ")를 벗어나면 원위치되고 07_배분로그에 기록됩니다. 연한 회색 칸 = 근무시간 밖."
         If ResultsStale(d) Then body = body & vbCr & "※ 이 날짜의 원데이터가 배분 이후 바뀌었습니다. [자동배분]으로 다시 배분하세요."
     End If
     SetPanel "선택일 요약 - " & Format(d, "yyyy-mm-dd"), body
@@ -493,7 +496,7 @@ Public Sub Board_ShowDetail(ByVal r As Long)
     Dim whenTxt As String
     If slot > 0 And insp <> "" Then
         whenTxt = insp & "  " & CStr(wsR.Cells(r, R_START).Value) & "~" & _
-                  SlotIndexToTimeStr(slot + nS, SettingTime("운영시작시간"), SettingLong("슬롯단위_분"))
+                  SlotIndexToTimeStr(slot + nS, DispStartTime(), SettingLong("슬롯단위_분"))
     Else
         whenTxt = "미지정 열 (배치되지 않음)"
     End If
@@ -582,8 +585,8 @@ Private Sub HandleMove(shp As Shape, ByVal r As Long)
     nInsp = GetBoardCols(names, unCol)
 
     Dim startTime As Date, endTime As Date, slotMin As Long, nSlots As Long
-    startTime = SettingTime("운영시작시간")
-    endTime = SettingTime("운영종료시간")
+    startTime = DispStartTime()
+    endTime = DispEndTime()
     slotMin = SettingLong("슬롯단위_분")
     nSlots = CalcSlotCount(startTime, endTime, slotMin)
 
@@ -625,7 +628,7 @@ Private Sub HandleMove(shp As Shape, ByVal r As Long)
             newSlot = CLng(Round((shp.Top - .Top) / .Height, 0)) + 1
         End With
         If newSlot < 1 Or newSlot + nS - 1 > nSlots Then
-            reason = "운영시간(" & Format(startTime, "hh:nn") & "~" & Format(endTime, "hh:nn") & ") 밖입니다."
+            reason = "시간축(" & TimeLabel(startTime) & "~" & TimeLabel(endTime) & ") 밖입니다."
         Else
             ' 같은 날짜·같은 검사자의 다른 블록(점심 포함)과 겹침 검사
             Dim lastRow As Long, rr As Long, s2 As Long, n2 As Long

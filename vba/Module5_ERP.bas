@@ -284,7 +284,7 @@ Private Function DrawLedger(ws As Worksheet, ByVal d As Date) As Long
                 End If
             End If
         Next i
-        rows = 10
+        rows = LEDGER_MIN_ROWS
         If nR > rows Then rows = nR
         If nP > rows Then rows = nP
 
@@ -344,7 +344,7 @@ Private Function DrawLedger(ws As Worksheet, ByVal d As Date) As Long
     ws.Cells(curRow, 1).Value = "비고"
     ws.Range(ws.Cells(curRow, 2), ws.Cells(curRow, 12)).Merge
     ws.Cells(curRow, 2).Value = notes
-    ws.rows(curRow).RowHeight = 26
+    ws.rows(curRow).RowHeight = 22
     With ws.Range(ws.Cells(curRow, 1), ws.Cells(curRow, 12))
         .Borders.LineStyle = xlContinuous
         .Borders.Weight = xlThin
@@ -381,7 +381,7 @@ Private Sub FormatDaySection(ws As Worksheet, ByVal sRow As Long, ByVal rows As 
     ws.Range(ws.Cells(sRow, 8), ws.Cells(eRow, 8)).Borders(xlEdgeLeft).Weight = xlMedium
     ws.Range(ws.Cells(sRow, 2), ws.Cells(eRow, 2)).Borders(xlEdgeLeft).Weight = xlMedium
 
-    ws.rows(sRow & ":" & eRow).RowHeight = 24
+    ws.rows(sRow & ":" & eRow).RowHeight = BODY_ROW_H
     ' 사용전검사 영역은 붉은 글씨
     ws.Range(ws.Cells(sRow, 8), ws.Cells(eRow, 12)).Font.Color = RGB(255, 0, 0)
     ' 정렬/표시 형식
@@ -392,7 +392,7 @@ Private Sub FormatDaySection(ws As Worksheet, ByVal sRow As Long, ByVal rows As 
     ws.Range(ws.Cells(sRow, 5), ws.Cells(eRow, 5)).NumberFormat = "h:mm"
     ws.Range(ws.Cells(sRow, 11), ws.Cells(eRow, 11)).NumberFormat = "h:mm"
     ws.Range(ws.Cells(sRow, 6), ws.Cells(eRow, 6)).NumberFormat = "#,##0"
-    ws.Range(ws.Cells(sRow, 6), ws.Cells(eRow, 6)).Font.Size = 9
+    ws.Range(ws.Cells(sRow, 6), ws.Cells(eRow, 6)).Font.Size = 8
     ws.Range(ws.Cells(sRow, 6), ws.Cells(eRow, 6)).HorizontalAlignment = xlRight
     ws.Range(ws.Cells(sRow, 3), ws.Cells(eRow, 3)).HorizontalAlignment = xlRight
     ws.Range(ws.Cells(sRow, 9), ws.Cells(eRow, 9)).HorizontalAlignment = xlRight
@@ -402,7 +402,7 @@ End Sub
 Private Sub SetupDayPrint(ws As Worksheet, ByVal ledgerLast As Long)
     Dim lastRow As Long, lastCol As Long
     lastRow = ledgerLast
-    If lastRow < GRID_START_ROW + 18 Then lastRow = GRID_START_ROW + 18
+    If lastRow < GRID_START_ROW + DispSlotCount() Then lastRow = GRID_START_ROW + DispSlotCount()
     lastCol = BoardLastCol()
     On Error Resume Next
     Application.PrintCommunication = False

@@ -192,13 +192,16 @@ Public Function AutoAssignDate(ByVal d As Date, ByVal quiet As Boolean) As Boole
     nInsp = UBound(inspectors) - LBound(inspectors) + 1
     mInsp = inspectors
 
-    Dim startTime As Date, endTime As Date, slotMin As Long, nSlots As Long
-    startTime = SettingTime("운영시작시간")
-    endTime = SettingTime("운영종료시간")
+    ' 시간축은 24시간(표시시간), 약속시간이 없는 업무/점심은 근무시간(workLo~workHi 칸) 안에만 배치
+    Dim startTime As Date, endTime As Date, slotMin As Long, nSlots As Long, workLo As Long, workHi As Long
+    startTime = DispStartTime()
+    endTime = DispEndTime()
     slotMin = SettingLong("슬롯단위_분")
     If slotMin <= 0 Then Err.Raise vbObjectError + 1, , "02_설정의 슬롯단위_분이 올바르지 않습니다."
     nSlots = CalcSlotCount(startTime, endTime, slotMin)
-    If nSlots < 1 Then Err.Raise vbObjectError + 2, , "02_설정의 운영시간이 올바르지 않습니다."
+    If nSlots < 1 Then Err.Raise vbObjectError + 2, , "02_설정의 표시시간(또는 운영시간)이 올바르지 않습니다."
+    workLo = WorkFirstSlot()
+    workHi = WorkLastSlot()
     mStart = startTime
     mSlotMin = slotMin
     mDate = d
@@ -253,7 +256,7 @@ Public Function AutoAssignDate(ByVal d As Date, ByVal quiet As Boolean) As Boole
                 AddLog "미배정", "지정검사자 '" & insp & "'가 이 날짜 근무자 명단에 없습니다 (휴가/비활성 포함).", mTasks(r).TaskName
                 FailToUnassigned r
             ElseIf slotIdx < 1 Or slotIdx + dur - 1 > nSlots Then
-                AddLog "충돌", "시간 '" & tstr & "' 업무가 운영시간(" & Format(startTime, "hh:nn") & "~" & Format(endTime, "hh:nn") & ") 안에 들어가지 않습니다.", mTasks(r).TaskName
+                AddLog "충돌", "시간 '" & tstr & "' 업무가 시간축(" & TimeLabel(startTime) & "~" & TimeLabel(endTime) & ") 안에 들어가지 않습니다(자정을 넘는지 확인).", mTasks(r).TaskName
                 FailToUnassigned r
             ElseIf Not SlotRangeFree(idx, slotIdx, dur, nSlots) Then
                 AddLog "충돌", "검사자 '" & insp & "'의 " & tstr & " 시간대가 이미 다른 업무로 차 있습니다.", mTasks(r).TaskName
@@ -272,7 +275,7 @@ Public Function AutoAssignDate(ByVal d As Date, ByVal quiet As Boolean) As Boole
             slotIdx = TimeToSlotIndex(tstr, startTime, slotMin)
             dur = mTasks(r).Slots
             If slotIdx < 1 Or slotIdx + dur - 1 > nSlots Then
-                AddLog "충돌", "시간 '" & tstr & "' 업무가 운영시간(" & Format(startTime, "hh:nn") & "~" & Format(endTime, "hh:nn") & ") 안에 들어가지 않습니다.", mTasks(r).TaskName
+                AddLog "충돌", "시간 '" & tstr & "' 업무가 시간축(" & TimeLabel(startTime) & "~" & TimeLabel(endTime) & ") 안에 들어가지 않습니다(자정을 넘는지 확인).", mTasks(r).TaskName
                 FailToUnassigned r
             Else
                 region = mTasks(r).RegionStd
@@ -305,9 +308,9 @@ Public Function AutoAssignDate(ByVal d As Date, ByVal quiet As Boolean) As Boole
                 FailToUnassigned r
             Else
                 dur = mTasks(r).Slots
-                freeSlot = FindFirstFreeSlot(idx, nSlots, dur)
+                freeSlot = FindFirstFreeSlot(idx, workLo, workHi, dur)
                 If freeSlot = 0 Then
-                    AddLog "충돌", "검사자 '" & insp & "'의 빈 시간이 없어 배치하지 못했습니다.", mTasks(r).TaskName
+                    AddLog "충돌", "검사자 '" & insp & "'의 근무시간 내 빈 시간이 없어 배치하지 못했습니다.", mTasks(r).TaskName
                     FailToUnassigned r
                 Else
                     PlaceAtSlot r, idx, freeSlot, dur, 3
@@ -330,7 +333,7 @@ Public Function AutoAssignDate(ByVal d As Date, ByVal quiet As Boolean) As Boole
             placed = False
             For k = LBound(order) To UBound(order)
                 cand = order(k)
-                freeSlot = FindFirstFreeSlot(cand, nSlots, dur)
+                freeSlot = FindFirstFreeSlot(cand, workLo, workHi, dur)
                 If freeSlot > 0 Then
                     PlaceAtSlot r, cand, freeSlot, dur, 4
                     placed = True
@@ -474,11 +477,12 @@ Private Function SlotRangeFree(ByVal idx As Long, ByVal slotIdx As Long, ByVal d
 End Function
 
 ' ------------------------------------------------------------
-' 해당 검사자의 첫 번째로 dur칸 연속 비어있는 슬롯 위치를 반환 (없으면 0)
+' 해당 검사자의 근무시간(lo~hi칸) 안에서 첫 번째로 dur칸 연속 비어있는 슬롯 위치를 반환 (없으면 0)
 ' ------------------------------------------------------------
-Private Function FindFirstFreeSlot(ByVal idx As Long, ByVal nSlots As Long, ByVal dur As Long) As Long
-    Dim s As Long
-    For s = 1 To nSlots - dur + 1
+Private Function FindFirstFreeSlot(ByVal idx As Long, ByVal lo As Long, ByVal hi As Long, ByVal dur As Long) As Long
+    Dim s As Long, nSlots As Long
+    nSlots = UBound(occupied, 2)
+    For s = lo To hi - dur + 1
         If SlotRangeFree(idx, s, dur, nSlots) Then
             FindFirstFreeSlot = s
             Exit Function

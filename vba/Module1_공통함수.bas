@@ -25,6 +25,8 @@ Public Const SH_GRID As String = "11_일일대장"      ' 배분현황판은 일
 Public Const GRID_COL0 As Long = 14
 Public Const GRID_HEADER_ROW As Long = 6
 Public Const GRID_START_ROW As Long = 7
+Public Const BODY_ROW_H As Long = 16          ' 접수대장 본문/현황판 한 칸(30분)의 행 높이
+Public Const LEDGER_MIN_ROWS As Long = 24     ' 구역(부천/김포)별 접수대장 최소 행 수 (2구역 x 24 = 현황판 48칸과 같은 높이)
 
 ' 10_원데이터 컬럼
 Public Const RW_DATE As Long = 1       ' 접수일자
@@ -149,7 +151,73 @@ Public Function SettingLong(ByVal nm As String) As Long
 End Function
 
 Public Function SettingTime(ByVal nm As String) As Date
-    SettingTime = TimeValue(CellTimeStr(SettingRaw(nm)))
+    Dim s As String
+    s = CellTimeStr(SettingRaw(nm))
+    If s = "24:00" Then
+        SettingTime = 1                  ' 하루의 끝 (24:00)
+    Else
+        SettingTime = TimeValue(s)
+    End If
+End Function
+
+Private Function NameExists(ByVal nm As String) As Boolean
+    Dim r As Range
+    On Error Resume Next
+    Set r = ThisWorkbook.names(nm).RefersToRange
+    On Error GoTo 0
+    NameExists = Not r Is Nothing
+End Function
+
+' ------------------------------------------------------------
+' 현황판 시간축(표시시간) = 02_설정 표시시작시간 ~ 표시종료시간 (기본 00:00 ~ 24:00, 24시간)
+' 업무 자동배치(미지정 업무/점심)는 운영시작시간 ~ 운영종료시간(근무시간) 안에서만 합니다.
+' 설정이 없으면 예전처럼 운영시간을 그대로 시간축으로 씁니다.
+' ------------------------------------------------------------
+Public Function DispStartTime() As Date
+    If NameExists("표시시작시간") Then
+        DispStartTime = SettingTime("표시시작시간")
+    Else
+        DispStartTime = SettingTime("운영시작시간")
+    End If
+End Function
+
+Public Function DispEndTime() As Date
+    If NameExists("표시종료시간") Then
+        DispEndTime = SettingTime("표시종료시간")
+    Else
+        DispEndTime = SettingTime("운영종료시간")
+    End If
+End Function
+
+' 시간축 전체 칸 수 (24시간 / 30분 = 48)
+Public Function DispSlotCount() As Long
+    DispSlotCount = CalcSlotCount(DispStartTime(), DispEndTime(), SettingLong("슬롯단위_분"))
+End Function
+
+' 근무시간(운영시작~운영종료)의 첫 칸 / 마지막 칸 번호 (시간축 기준 1-based)
+Public Function WorkFirstSlot() As Long
+    Dim n As Long
+    n = TimeToSlotIndex(CellTimeStr(SettingRaw("운영시작시간")), DispStartTime(), SettingLong("슬롯단위_분"))
+    If n < 1 Then n = 1
+    WorkFirstSlot = n
+End Function
+
+Public Function WorkLastSlot() As Long
+    Dim n As Long
+    n = WorkFirstSlot() + CalcSlotCount(SettingTime("운영시작시간"), SettingTime("운영종료시간"), SettingLong("슬롯단위_분")) - 1
+    If n > DispSlotCount() Then n = DispSlotCount()
+    WorkLastSlot = n
+End Function
+
+' 시각 -> "hh:mm" (하루의 끝은 "24:00")
+Public Function TimeLabel(ByVal t As Date) As String
+    Dim m As Long
+    m = CLng(Round(CDbl(t) * 1440, 0))
+    If m >= 1440 Then
+        TimeLabel = "24:00"
+    Else
+        TimeLabel = Format(m \ 60, "00") & ":" & Format(m Mod 60, "00")
+    End If
 End Function
 
 ' ------------------------------------------------------------
@@ -174,7 +242,7 @@ Public Function CellTimeStr(ByVal v As Variant) As String
     End If
 End Function
 
-' 운영시간 내 슬롯 개수 (09:30~18:00, 30분 단위 -> 17칸: 09:30 ~ 17:30 시작, 18:00까지 종료)
+' 시간 범위 내 슬롯 개수 (24시간 / 30분 = 48칸, 근무시간 09:30~18:00 = 17칸)
 Public Function CalcSlotCount(ByVal startTime As Date, ByVal endTime As Date, ByVal slotMin As Long) As Long
     CalcSlotCount = CLng(Round((endTime - startTime) * 1440, 0)) \ slotMin
 End Function
@@ -447,9 +515,13 @@ End Function
 ' 슬롯 인덱스를 "HH:MM" 문자열로 변환 (로그/디버깅용)
 ' ------------------------------------------------------------
 Public Function SlotIndexToTimeStr(ByVal slotIdx As Long, ByVal startTime As Date, ByVal slotMin As Long) As String
-    Dim t As Date
-    t = startTime + TimeSerial(0, (slotIdx - 1) * slotMin, 0)
-    SlotIndexToTimeStr = Format(t, "hh:nn")
+    Dim m As Long
+    m = CLng(Round(CDbl(startTime) * 1440, 0)) + (slotIdx - 1) * slotMin
+    If m >= 1440 Then
+        SlotIndexToTimeStr = "24:00"
+    Else
+        SlotIndexToTimeStr = Format(m \ 60, "00") & ":" & Format(m Mod 60, "00")
+    End If
 End Function
 
 ' ------------------------------------------------------------
