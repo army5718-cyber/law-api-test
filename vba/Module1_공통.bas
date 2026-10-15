@@ -108,6 +108,11 @@ Public gDayVer As Long              ' 화면을 그릴 때의 gRawVer
 Public gDayDrawn As Boolean
 Public gBoardTop As Long            ' 현황판 시간대 창의 첫 칸(슬롯 번호, 1 = 표시시작시간). 0 = 아직 정하지 않음
 
+' 원데이터 캐시 / 속도 도우미 상태 (모듈 맨 위 선언부에 있어야 함)
+Private rawCache As Variant
+Private rawCacheOK As Boolean
+Private sPrevSU As Boolean, sPrevEv As Boolean, sPrevCalc As Long, sDepth As Long
+
 Public gLogCount As Long
 Public gSilent As Boolean
 Public gLastMsg As String
@@ -317,8 +322,6 @@ End Function
 ' 10_원데이터 (표 tblRaw) - 값 전체를 한 번만 읽어 캐시합니다.
 ' 원데이터가 바뀌면 RawInvalidate 를 불러야 합니다 (Worksheet_Change / 입력 완료가 호출).
 ' ------------------------------------------------------------
-Private rawCache As Variant
-Private rawCacheOK As Boolean
 
 Public Function RawTable() As ListObject
     Set RawTable = ThisWorkbook.Sheets(SH_RAW).ListObjects("tblRaw")
@@ -585,7 +588,6 @@ End Sub
 ' ------------------------------------------------------------
 ' 작업 시작/끝에서 화면 갱신·이벤트·자동계산을 잠시 끄고 되돌리는 도우미 (속도)
 ' ------------------------------------------------------------
-Private sPrevSU As Boolean, sPrevEv As Boolean, sPrevCalc As Long, sDepth As Long
 
 Public Sub FastBegin()
     If sDepth = 0 Then

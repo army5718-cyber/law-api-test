@@ -9,7 +9,7 @@ import subprocess, sys, os
 here=os.path.dirname(os.path.abspath(__file__)); x,v=sys.argv[1:3]
 steps=[('vbacheck',[sys.executable,f'{here}/vbacheck.py',v]),('vbalint',[sys.executable,f'{here}/vbalint.py',v]),
        ('byref',[sys.executable,f'{here}/test_byref.py',v]),('contract',[sys.executable,f'{here}/test_contract.py',x,v]),
-       ('port',[sys.executable,f'{here}/test_port.py',x]),('layout',[sys.executable,f'{here}/test_layout.py',x])]
+       ('port',[sys.executable,f'{here}/test_port.py',x]),('decl',[sys.executable,f'{here}/test_decl.py',v]),('layout',[sys.executable,f'{here}/test_layout.py',x])]
 bad=0
 for n,cmd in steps:
     p=subprocess.run(cmd,capture_output=True,text=True); out=(p.stdout+p.stderr).strip()
