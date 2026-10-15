@@ -1,0 +1,8 @@
+Option Explicit
+
+' 파일을 열면 엑셀 화면은 숨기고 체크리스트 폼만 표시합니다.
+' (폼을 닫으면 엑셀 화면이 다시 보입니다.  원치 않으면 아래 한 줄을 지우세요: Application.Visible = False)
+Private Sub Workbook_Open()
+    Application.Visible = False
+    ChkForm.Show
+End Sub

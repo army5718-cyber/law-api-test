@@ -1,0 +1,718 @@
+Option Explicit
+
+' ==========================================================
+'  업무 체크리스트 - ChkForm 코드
+'  구조 : 업무분야 > 업무명 > 세부업무  (왼쪽 트리)
+'         선택한 항목의 [확인사항]이 오른쪽 화면에 표시됩니다.
+'  - 컨트롤은 폼이 열릴 때 코드로 자동 생성됩니다.
+'  - 데이터 : Checklist 시트 / 점검이력 : Events 시트
+' ==========================================================
+
+Private Const FORM_TITLE As String = "업무 체크리스트"
+Private Const FONT_NAME As String = "Malgun Gothic"
+Private Const RP_L As Single = 330        ' 오른쪽 패널 시작 위치
+Private Const RP_W As Single = 440        ' 오른쪽 패널 너비
+Private Const FORM_W As Single = 790
+Private Const FORM_H As Single = 520
+
+Private WithEvents txtSearch As MSForms.TextBox
+Private WithEvents cboCyc As MSForms.ComboBox
+Private WithEvents btnExp As MSForms.CommandButton
+Private WithEvents btnCol As MSForms.CommandButton
+Private WithEvents btnClr As MSForms.CommandButton
+Private WithEvents lstTree As MSForms.ListBox
+Private WithEvents btnRec As MSForms.CommandButton
+Private WithEvents btnUndo As MSForms.CommandButton
+Private WithEvents btnClose As MSForms.CommandButton
+
+Private lblTot As MSForms.Label
+Private lblCrumb As MSForms.Label
+Private lblTitle As MSForms.Label
+Private lblCycle As MSForms.Label
+Private lblTiming As MSForms.Label
+Private lblHead As MSForms.Label
+Private txtBody As MSForms.TextBox
+Private lblHistHead As MSForms.Label
+Private lstHist As MSForms.ListBox
+Private lblStatus As MSForms.Label
+
+' ----- 데이터 -----
+Private nData As Long
+Private dRow() As Long            ' 시트 행 번호
+Private dArea() As String
+Private dTask() As String
+Private dTime() As String
+Private dTCyc() As String
+Private dSub() As String
+Private dCyc() As String
+Private dText() As String
+Private dDone() As Variant       ' 완료일시
+Private aIdx() As Long
+Private tIdx() As Long
+
+Private nA As Long
+Private aName() As String
+Private aOpen() As Boolean
+Private nT As Long
+Private tName() As String
+Private tArea() As Long
+Private tOpen() As Boolean
+Private tFirst() As Long
+Private tCount() As Long
+
+Private nodeCount As Long
+Private nodeKind() As Integer     ' 1=업무분야 2=업무명 3=세부업무
+Private nodeRef() As Long
+Private nodeLvl() As Integer
+
+Private busy As Boolean
+Private searching As Boolean
+Private mouseTick As Double
+Private curRow As Long
+
+
+Private Sub UserForm_Initialize()
+    Me.Caption = FORM_TITLE
+    Me.BackColor = RGB(236, 243, 248)
+    Me.Width = FORM_W
+    Me.Height = FORM_H
+    BuildUI
+    LoadData
+    busy = True
+    BuildTree
+    busy = False
+    ShowGuide
+    UpdateTotal
+End Sub
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    On Error Resume Next
+    Application.Visible = True
+    ThisWorkbook.Save
+    On Error GoTo 0
+End Sub
+
+
+' ==========================================================
+'  화면 구성
+' ==========================================================
+Private Sub BuildUI()
+    Dim navy As Long
+    navy = RGB(21, 96, 130)
+
+    AddLbl "x_hdr", 0, 0, FORM_W, 44, "", 10, False, 0, navy
+    AddLbl "x_t1", 12, 6, 400, 22, FORM_TITLE, 15, True, RGB(255, 255, 255)
+    AddLbl "x_t2", 12, 27, 500, 14, "업무분야 " & ChrW(&H25B6) & " 업무명 " & ChrW(&H25B6) & " 세부업무를 선택하면 오른쪽에 확인사항이 나옵니다", 9, False, RGB(200, 226, 242)
+    Set lblTot = AddLbl("x_tot", 520, 14, 258, 18, "", 10, True, RGB(255, 255, 255))
+    lblTot.TextAlign = fmTextAlignRight
+
+    ' 왼쪽 : 검색 / 주기 / 트리
+    AddLbl "x_ls", 10, 54, 30, 16, "검색", 10, True, navy
+    Set txtSearch = Me.Controls.Add("Forms.TextBox.1", "x_search", True)
+    With txtSearch
+        .Left = 42: .Top = 52: .Width = 190: .Height = 20
+        .Font.Name = FONT_NAME: .Font.Size = 10
+    End With
+    Set btnClr = AddBtn("x_clr", 236, 52, 22, 20, ChrW(&HD7), False)
+
+    Set cboCyc = Me.Controls.Add("Forms.ComboBox.1", "x_cyc", True)
+    With cboCyc
+        .Left = 10: .Top = 78: .Width = 100: .Height = 20
+        .Font.Name = FONT_NAME: .Font.Size = 10
+        .Style = fmStyleDropDownList
+        .AddItem "점검주기 전체"
+        .AddItem "일"
+        .AddItem "월"
+        .AddItem "분기"
+        .AddItem "반기"
+        .AddItem "연간"
+        .AddItem "기타"
+        .ListIndex = 0
+    End With
+    Set btnExp = AddBtn("x_exp", 116, 78, 70, 20, "전체펼침", False)
+    Set btnCol = AddBtn("x_col", 190, 78, 68, 20, "전체접기", False)
+
+    Set lstTree = Me.Controls.Add("Forms.ListBox.1", "x_tree", True)
+    With lstTree
+        .Left = 10: .Top = 104: .Width = 306: .Height = 378
+        .Font.Name = FONT_NAME: .Font.Size = 10
+        .BackColor = RGB(255, 255, 255)
+    End With
+
+    ' 오른쪽 : 상세
+    Set lblCrumb = AddLbl("x_crumb", RP_L, 52, RP_W, 16, "", 9, False, RGB(90, 110, 125))
+    Set lblTitle = AddLbl("x_title", RP_L, 68, RP_W, 36, "", 13, True, RGB(20, 40, 60))
+    lblTitle.WordWrap = True
+    Set lblCycle = AddLbl("x_cycle", RP_L, 108, 150, 18, "", 10, True, RGB(56, 118, 29), RGB(226, 240, 217))
+    lblCycle.TextAlign = fmTextAlignCenter
+    Set lblTiming = AddLbl("x_timing", RP_L + 156, 108, RP_W - 156, 18, "", 10, True, navy, RGB(214, 234, 248))
+    lblTiming.TextAlign = fmTextAlignCenter
+
+    Set lblHead = AddLbl("x_head", RP_L, 132, RP_W, 16, "확인사항", 11, True, navy)
+
+    Set txtBody = Me.Controls.Add("Forms.TextBox.1", "x_body", True)
+    With txtBody
+        .Left = RP_L: .Top = 150: .Width = RP_W: .Height = 230
+        .Font.Name = FONT_NAME: .Font.Size = 11
+        .MultiLine = True
+        .WordWrap = True
+        .ScrollBars = fmScrollBarsVertical
+        .Locked = True
+        .BackColor = RGB(255, 255, 255)
+        .EnterKeyBehavior = True
+    End With
+
+    Set lblHistHead = AddLbl("x_hh", RP_L, 386, RP_W, 16, "최근 점검 이력 (Events 시트)", 10, True, navy)
+    Set lstHist = Me.Controls.Add("Forms.ListBox.1", "x_hist", True)
+    With lstHist
+        .Left = RP_L: .Top = 404: .Width = RP_W: .Height = 46
+        .Font.Name = FONT_NAME: .Font.Size = 9
+        .BackColor = RGB(250, 252, 254)
+    End With
+
+    Set lblStatus = AddLbl("x_status", 10, 488, 310, 16, "", 9, False, RGB(90, 110, 125))
+    Set btnRec = AddBtn("x_rec", RP_L, 456, 160, 28, "점검 완료 기록", True)
+    Set btnUndo = AddBtn("x_undo", RP_L + 168, 456, 130, 28, "완료 취소", False)
+    Set btnClose = AddBtn("x_close", RP_L + 306, 456, 134, 28, "닫  기", False)
+End Sub
+
+Private Function AddLbl(ByVal nm As String, ByVal l As Single, ByVal t As Single, _
+                        ByVal w As Single, ByVal h As Single, ByVal cap As String, _
+                        Optional ByVal fs As Single = 10, Optional ByVal bld As Boolean = False, _
+                        Optional ByVal fc As Long = 0, Optional ByVal bc As Long = -1) As MSForms.Label
+    Dim lb As MSForms.Label
+    Set lb = Me.Controls.Add("Forms.Label.1", nm, True)
+    With lb
+        .Left = l: .Top = t: .Width = w: .Height = h
+        .Caption = cap
+        .Font.Name = FONT_NAME
+        .Font.Size = fs
+        .Font.Bold = bld
+        .ForeColor = fc
+        If bc = -1 Then
+            .BackStyle = fmBackStyleTransparent
+        Else
+            .BackStyle = fmBackStyleOpaque
+            .BackColor = bc
+        End If
+    End With
+    Set AddLbl = lb
+End Function
+
+Private Function AddBtn(ByVal nm As String, ByVal l As Single, ByVal t As Single, _
+                        ByVal w As Single, ByVal h As Single, ByVal cap As String, _
+                        ByVal primary As Boolean) As MSForms.CommandButton
+    Dim b As MSForms.CommandButton
+    Set b = Me.Controls.Add("Forms.CommandButton.1", nm, True)
+    With b
+        .Left = l: .Top = t: .Width = w: .Height = h
+        .Caption = cap
+        .Font.Name = FONT_NAME
+        .Font.Size = 10
+        .Font.Bold = primary
+        .TakeFocusOnClick = False
+        If primary Then
+            .BackColor = RGB(21, 96, 130)
+            .ForeColor = RGB(255, 255, 255)
+        Else
+            .BackColor = RGB(255, 255, 255)
+            .ForeColor = RGB(21, 96, 130)
+        End If
+    End With
+    Set AddBtn = b
+End Function
+
+
+' ==========================================================
+'  데이터 로드 (Checklist 시트)
+' ==========================================================
+Private Sub LoadData()
+    Dim ws As Worksheet, lastRow As Long, v As Variant
+    Dim r As Long, k As Long, i As Long, a As Long, t As Long
+
+    nData = 0: nA = 0: nT = 0
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets("Checklist")
+    On Error GoTo 0
+    If ws Is Nothing Then Exit Sub
+
+    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+    If lastRow < 2 Then Exit Sub
+    v = ws.Range("A2:I" & lastRow).Value2
+    k = UBound(v, 1)
+
+    ReDim dRow(1 To k): ReDim dArea(1 To k): ReDim dTask(1 To k)
+    ReDim dTime(1 To k): ReDim dTCyc(1 To k): ReDim dSub(1 To k)
+    ReDim dCyc(1 To k): ReDim dText(1 To k): ReDim dDone(1 To k)
+    ReDim aIdx(1 To k): ReDim tIdx(1 To k)
+    ReDim aName(1 To k): ReDim aOpen(1 To k)
+    ReDim tName(1 To k): ReDim tArea(1 To k): ReDim tOpen(1 To k)
+    ReDim tFirst(1 To k): ReDim tCount(1 To k)
+
+    For r = 1 To k
+        If Clean(v(r, 2)) <> "" Then
+            nData = nData + 1
+            i = nData
+            dRow(i) = r + 1
+            dArea(i) = Clean(v(r, 2))
+            dTask(i) = Clean(v(r, 3))
+            dTime(i) = Clean(v(r, 4))
+            dTCyc(i) = Clean(v(r, 5))
+            dSub(i) = Clean(v(r, 6))
+            dCyc(i) = Clean(v(r, 7))
+            If dCyc(i) = "" Then dCyc(i) = dTCyc(i)
+            If IsError(v(r, 8)) Then dText(i) = "" Else dText(i) = CStr(v(r, 8))
+            dDone(i) = v(r, 9)
+
+            ' 업무분야 번호
+            a = 0
+            If nA > 0 Then
+                If aName(nA) = dArea(i) Then a = nA
+            End If
+            If a = 0 Then nA = nA + 1: a = nA: aName(a) = dArea(i)
+            aIdx(i) = a
+
+            ' 업무명 번호
+            t = 0
+            If nT > 0 Then
+                If tArea(nT) = a And tName(nT) = dTask(i) Then t = nT
+            End If
+            If t = 0 Then
+                nT = nT + 1: t = nT
+                tName(t) = dTask(i): tArea(t) = a: tFirst(t) = i
+            End If
+            tIdx(i) = t
+            tCount(t) = tCount(t) + 1
+        End If
+    Next r
+    If nA > 0 Then aOpen(1) = True
+End Sub
+
+Private Function Clean(ByVal x As Variant) As String
+    If IsError(x) Then Exit Function
+    If IsEmpty(x) Then Exit Function
+    Clean = Trim(Replace(Replace(CStr(x), vbCr, " "), vbLf, " "))
+End Function
+
+Private Function IsDone(ByVal i As Long) As Boolean
+    If i < 1 Then Exit Function
+    If IsDate(dDone(i)) Then IsDone = (Int(CDbl(CDate(dDone(i)))) = CLng(Date))
+End Function
+
+Private Function IsSelfTask(ByVal t As Long) As Boolean
+    IsSelfTask = (tCount(t) = 1 And dSub(tFirst(t)) = "")
+End Function
+
+Private Function AreaDone(ByVal a As Long, ByRef tot As Long) As Long
+    Dim i As Long, n As Long
+    tot = 0
+    For i = 1 To nData
+        If aIdx(i) = a Then
+            tot = tot + 1
+            If IsDone(i) Then n = n + 1
+        End If
+    Next i
+    AreaDone = n
+End Function
+
+Private Function TaskDone(ByVal t As Long, ByRef tot As Long) As Long
+    Dim i As Long, n As Long
+    tot = 0
+    For i = 1 To nData
+        If tIdx(i) = t Then
+            tot = tot + 1
+            If IsDone(i) Then n = n + 1
+        End If
+    Next i
+    TaskDone = n
+End Function
+
+Private Sub UpdateTotal()
+    Dim i As Long, n As Long
+    For i = 1 To nData
+        If IsDone(i) Then n = n + 1
+    Next i
+    lblTot.Caption = "오늘 확인완료  " & n & " / " & nData & " 건"
+End Sub
+
+
+' ==========================================================
+'  트리(ListBox)
+' ==========================================================
+Private Function Matches(ByVal i As Long) As Boolean
+    Dim key As String, s As String, c As String
+    c = cboCyc.Value
+    If c <> "" And c <> "점검주기 전체" Then
+        If InStr(dCyc(i), c) = 0 Then Exit Function
+    End If
+    key = LCase(Trim(txtSearch.Text))
+    If key <> "" Then
+        s = LCase(dArea(i) & "|" & dTask(i) & "|" & dTime(i) & "|" & dSub(i) & "|" & dText(i))
+        If InStr(s, key) = 0 Then Exit Function
+    End If
+    Matches = True
+End Function
+
+Private Sub BuildTree()
+    Dim a As Long, t As Long, i As Long, nh As Long, ah As Long
+
+    lstTree.Clear
+    nodeCount = 0
+    If nData = 0 Then Exit Sub
+    ReDim nodeKind(1 To nData + nA + nT + 2)
+    ReDim nodeRef(1 To nData + nA + nT + 2)
+    ReDim nodeLvl(1 To nData + nA + nT + 2)
+    searching = (Trim(txtSearch.Text) <> "" Or (cboCyc.ListIndex > 0))
+
+    For a = 1 To nA
+        ah = 0
+        For i = 1 To nData
+            If aIdx(i) = a Then If Matches(i) Then ah = ah + 1
+        Next i
+        If ah > 0 Then
+            AddNode 1, a, 0
+            If searching Or aOpen(a) Then
+                For t = 1 To nT
+                    If tArea(t) = a Then
+                        nh = 0
+                        For i = 1 To nData
+                            If tIdx(i) = t Then If Matches(i) Then nh = nh + 1
+                        Next i
+                        If nh > 0 Then
+                            If IsSelfTask(t) Then
+                                AddNode 3, tFirst(t), 1
+                            Else
+                                AddNode 2, t, 1
+                                If searching Or tOpen(t) Then
+                                    For i = 1 To nData
+                                        If tIdx(i) = t Then If Matches(i) Then AddNode 3, i, 2
+                                    Next i
+                                End If
+                            End If
+                        End If
+                    End If
+                Next t
+            End If
+        End If
+    Next a
+End Sub
+
+Private Sub AddNode(ByVal kind As Integer, ByVal ref As Long, ByVal lvl As Integer)
+    nodeCount = nodeCount + 1
+    nodeKind(nodeCount) = kind
+    nodeRef(nodeCount) = ref
+    nodeLvl(nodeCount) = lvl
+    lstTree.AddItem NodeText(nodeCount)
+End Sub
+
+Private Function NodeText(ByVal k As Long) As String
+    Dim arrow As String, tot As Long, n As Long, s As String, i As Long
+    Select Case nodeKind(k)
+    Case 1
+        If searching Or aOpen(nodeRef(k)) Then arrow = ChrW(&H25BC) Else arrow = ChrW(&H25B6)
+        n = AreaDone(nodeRef(k), tot)
+        NodeText = arrow & "  " & aName(nodeRef(k)) & "   (" & n & "/" & tot & ")"
+    Case 2
+        If searching Or tOpen(nodeRef(k)) Then arrow = ChrW(&H25BC) Else arrow = ChrW(&H25B6)
+        n = TaskDone(nodeRef(k), tot)
+        NodeText = "      " & arrow & " " & tName(nodeRef(k)) & "   (" & n & "/" & tot & ")"
+    Case Else
+        i = nodeRef(k)
+        If nodeLvl(k) = 1 Then
+            s = "      " & ChrW(&H2022) & " " & dTask(i)
+        Else
+            s = "            " & ChrW(&H2514) & " " & dSub(i)
+        End If
+        If IsDone(i) Then s = s & "   [완료]"
+        NodeText = s
+    End Select
+End Function
+
+Private Sub RefreshNodeTexts()
+    Dim k As Long
+    busy = True
+    For k = 1 To nodeCount
+        lstTree.List(k - 1) = NodeText(k)
+    Next k
+    busy = False
+End Sub
+
+Private Sub lstTree_MouseDown(ByVal Button As Integer, ByVal Shift As Integer, _
+                              ByVal X As Single, ByVal Y As Single)
+    mouseTick = Timer
+End Sub
+
+Private Sub lstTree_Click()
+    Dim k As Long
+    If busy Then Exit Sub
+    k = lstTree.ListIndex + 1
+    If k < 1 Or k > nodeCount Then Exit Sub
+    If nodeKind(k) < 3 And Abs(Timer - mouseTick) < 1 Then
+        mouseTick = -100
+        ToggleNode k
+    Else
+        OnSelect k
+    End If
+End Sub
+
+Private Sub lstTree_Change()
+    If busy Then Exit Sub
+    OnSelect lstTree.ListIndex + 1
+End Sub
+
+Private Sub lstTree_KeyDown(ByVal KeyCode As MSForms.ReturnInteger, ByVal Shift As Integer)
+    Dim k As Long
+    k = lstTree.ListIndex + 1
+    If k < 1 Or k > nodeCount Then Exit Sub
+    If nodeKind(k) > 2 Then Exit Sub
+    Select Case KeyCode
+        Case 39: ToggleNode k, 1: KeyCode = 0
+        Case 37: ToggleNode k, 0: KeyCode = 0
+        Case 13, 32: ToggleNode k: KeyCode = 0
+    End Select
+End Sub
+
+Private Sub OnSelect(ByVal k As Long)
+    If busy Then Exit Sub
+    If k < 1 Or k > nodeCount Then
+        curRow = 0
+        ShowGuide
+        Exit Sub
+    End If
+    Select Case nodeKind(k)
+        Case 1: ShowArea nodeRef(k)
+        Case 2: ShowTask nodeRef(k)
+        Case Else: ShowLeaf nodeRef(k)
+    End Select
+End Sub
+
+Private Sub ToggleNode(ByVal k As Long, Optional ByVal st As Integer = -1)
+    Dim j As Long, topIdx As Long, kind As Integer, ref As Long, nv As Boolean
+
+    kind = nodeKind(k): ref = nodeRef(k)
+    If searching Then
+        If kind = 1 Then ShowArea ref Else ShowTask ref
+        Exit Sub
+    End If
+
+    If kind = 1 Then
+        If st = -1 Then nv = Not aOpen(ref) Else nv = (st = 1)
+        aOpen(ref) = nv
+    Else
+        If st = -1 Then nv = Not tOpen(ref) Else nv = (st = 1)
+        tOpen(ref) = nv
+    End If
+    topIdx = lstTree.TopIndex
+
+    busy = True
+    BuildTree
+    For j = 1 To nodeCount
+        If nodeKind(j) = kind And nodeRef(j) = ref Then
+            lstTree.ListIndex = j - 1
+            Exit For
+        End If
+    Next j
+    On Error Resume Next
+    lstTree.TopIndex = topIdx
+    On Error GoTo 0
+    busy = False
+
+    If kind = 1 Then ShowArea ref Else ShowTask ref
+End Sub
+
+Private Sub SetAll(ByVal st As Boolean)
+    Dim i As Long
+    For i = 1 To nA: aOpen(i) = st: Next i
+    For i = 1 To nT: tOpen(i) = st: Next i
+    busy = True
+    BuildTree
+    On Error Resume Next
+    lstTree.ListIndex = -1
+    On Error GoTo 0
+    busy = False
+    curRow = 0
+    ShowGuide
+End Sub
+
+Private Sub btnExp_Click()
+    SetAll True
+End Sub
+
+Private Sub btnCol_Click()
+    SetAll False
+End Sub
+
+Private Sub btnClr_Click()
+    txtSearch.Text = ""
+    txtSearch.SetFocus
+End Sub
+
+Private Sub txtSearch_Change()
+    Refilter
+End Sub
+
+Private Sub cboCyc_Change()
+    Refilter
+End Sub
+
+Private Sub Refilter()
+    If busy Then Exit Sub
+    busy = True
+    BuildTree
+    On Error Resume Next
+    lstTree.ListIndex = -1
+    On Error GoTo 0
+    busy = False
+    curRow = 0
+    ShowGuide
+End Sub
+
+
+' ==========================================================
+'  오른쪽 화면
+' ==========================================================
+Private Sub SetLeafMode(ByVal on_ As Boolean)
+    btnRec.Visible = on_
+    btnUndo.Visible = on_
+    lblHistHead.Visible = on_
+    lstHist.Visible = on_
+End Sub
+
+Private Sub ShowGuide()
+    curRow = 0
+    SetLeafMode False
+    lblCrumb.Caption = ""
+    lblTitle.Caption = "업무 체크리스트"
+    lblCycle.Caption = "": lblCycle.BackStyle = fmBackStyleTransparent
+    lblTiming.Caption = "": lblTiming.BackStyle = fmBackStyleTransparent
+    lblHead.Caption = "사용 방법"
+    txtBody.Text = "1. 왼쪽에서 업무분야를 클릭해 펼칩니다." & vbCrLf & _
+        "2. 업무명 > 세부업무를 선택합니다." & vbCrLf & _
+        "3. 오른쪽에 확인사항이 표시됩니다." & vbCrLf & _
+        "4. 점검을 마치면 [점검 완료 기록]을 누릅니다." & vbCrLf & vbCrLf & _
+        "검색·점검주기 선택으로 해당 업무만 골라볼 수 있습니다." & vbCrLf & vbCrLf & _
+        "업무분야 " & nA & "개 / 점검 단위 " & nData & "건"
+    lblStatus.Caption = ""
+End Sub
+
+Private Sub SetBadges(ByVal cyc As String, ByVal tm As String)
+    lblCycle.Caption = IIf(cyc = "", "점검주기 : -", "점검주기 : " & cyc)
+    lblCycle.BackStyle = fmBackStyleOpaque
+    lblTiming.Caption = tm
+    If tm = "" Then
+        lblTiming.BackStyle = fmBackStyleTransparent
+    Else
+        lblTiming.BackStyle = fmBackStyleOpaque
+    End If
+End Sub
+
+Private Sub ShowArea(ByVal a As Long)
+    Dim t As Long, s As String, n As Long, tot As Long
+    curRow = 0
+    SetLeafMode False
+    lblCrumb.Caption = "업무분야"
+    lblTitle.Caption = aName(a)
+    lblCycle.Caption = "": lblCycle.BackStyle = fmBackStyleTransparent
+    lblTiming.Caption = "": lblTiming.BackStyle = fmBackStyleTransparent
+    n = AreaDone(a, tot)
+    lblHead.Caption = "업무 목록  (오늘 완료 " & n & " / " & tot & ")"
+    For t = 1 To nT
+        If tArea(t) = a Then
+            n = TaskDone(t, tot)
+            s = s & tName(t) & "   (" & n & "/" & tot & ")" & vbCrLf
+        End If
+    Next t
+    txtBody.Text = s
+End Sub
+
+Private Sub ShowTask(ByVal t As Long)
+    Dim i As Long, s As String, n As Long, tot As Long
+    curRow = 0
+    SetLeafMode False
+    lblCrumb.Caption = aName(tArea(t))
+    lblTitle.Caption = tName(t)
+    i = tFirst(t)
+    SetBadges dTCyc(i), dTime(i)
+    n = TaskDone(t, tot)
+    lblHead.Caption = "세부업무  (오늘 완료 " & n & " / " & tot & ")"
+    For i = 1 To nData
+        If tIdx(i) = t Then
+            s = s & dSub(i)
+            If IsDone(i) Then s = s & "   [완료]"
+            s = s & vbCrLf
+        End If
+    Next i
+    txtBody.Text = s
+End Sub
+
+Private Sub ShowLeaf(ByVal i As Long)
+    curRow = i
+    SetLeafMode True
+    lblCrumb.Caption = aName(aIdx(i)) & "  " & ChrW(&H25B6) & "  " & dTask(i) & IIf(dSub(i) = "", "", "  " & ChrW(&H25B6) & "  " & dSub(i))
+    lblTitle.Caption = IIf(dSub(i) = "", dTask(i), dSub(i))
+    SetBadges dCyc(i), dTime(i)
+    lblHead.Caption = "확인사항"
+    txtBody.Text = Replace(dText(i), vbLf, vbCrLf)
+    LoadHist i
+    lblStatus.Caption = IIf(IsDone(i), "오늘 완료됨 (" & Format(dDone(i), "hh:nn") & ")", "")
+End Sub
+
+Private Sub LoadHist(ByVal i As Long)
+    Dim ws As Worksheet, r As Long, n As Long, last As Long
+    lstHist.Clear
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets("Events")
+    On Error GoTo 0
+    If ws Is Nothing Then Exit Sub
+    last = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    For r = last To 2 Step -1
+        If CStr(ws.Cells(r, 3).Value) = dTask(i) And CStr(ws.Cells(r, 4).Value) = dSub(i) And CStr(ws.Cells(r, 2).Value) = dArea(i) Then
+            lstHist.AddItem Format(ws.Cells(r, 1).Value, "yyyy-mm-dd hh:nn") & "   " & ws.Cells(r, 5).Value
+            n = n + 1
+            If n >= 5 Then Exit For
+        End If
+    Next r
+    If n = 0 Then lstHist.AddItem "기록된 점검 이력이 없습니다"
+End Sub
+
+
+' ==========================================================
+'  기록 / 취소 / 닫기
+' ==========================================================
+Private Sub btnRec_Click()
+    Dim ws As Worksheet, ev As Worksheet, r As Long, nowT As Date
+    If curRow < 1 Then Exit Sub
+    nowT = Now
+    Set ws = ThisWorkbook.Worksheets("Checklist")
+    Set ev = ThisWorkbook.Worksheets("Events")
+    r = ev.Cells(ev.Rows.Count, "A").End(xlUp).Row + 1
+    ev.Cells(r, 1).Value = nowT
+    ev.Cells(r, 1).NumberFormat = "yyyy-mm-dd hh:nn"
+    ev.Cells(r, 2).Value = dArea(curRow)
+    ev.Cells(r, 3).Value = dTask(curRow)
+    ev.Cells(r, 4).Value = dSub(curRow)
+    ev.Cells(r, 5).Value = "완료"
+    ws.Cells(dRow(curRow), 9).Value = nowT
+    ws.Cells(dRow(curRow), 9).NumberFormat = "yyyy-mm-dd hh:nn"
+    dDone(curRow) = nowT
+    AfterChange
+    lblStatus.Caption = "점검 이력을 기록했습니다 (" & Format(nowT, "hh:nn") & ")"
+End Sub
+
+Private Sub btnUndo_Click()
+    If curRow < 1 Then Exit Sub
+    ThisWorkbook.Worksheets("Checklist").Cells(dRow(curRow), 9).ClearContents
+    dDone(curRow) = Empty
+    AfterChange
+    lblStatus.Caption = "완료 표시를 취소했습니다"
+End Sub
+
+Private Sub AfterChange()
+    RefreshNodeTexts
+    UpdateTotal
+    LoadHist curRow
+End Sub
+
+Private Sub btnClose_Click()
+    Unload Me
+End Sub
