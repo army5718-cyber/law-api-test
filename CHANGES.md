@@ -53,3 +53,6 @@
 ## 수정: 컴파일 오류 (모듈 수준 선언 위치)
 - Module1_공통의 Private 변수(rawCache, rawCacheOK, sPrevSU 등)가 프로시저 뒤에 선언되어 "프로시저 뒤에는 주석만 올 수 있습니다" 컴파일 오류 발생 -> 모듈 맨 위 선언부로 이동.
 - tests/test_decl.py 추가(프로시저 뒤 선언, 변수 중복 선언, 프로시저 이름 중복 점검).
+
+## 수정: Hidden 속성 오류
+- Range("M:N").Hidden / 3행 숨김이 일부 환경에서 1004로 거부 -> EntireColumn/EntireRow 사용 + 실패 시 너비/높이 0 대체.

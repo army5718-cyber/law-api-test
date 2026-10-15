@@ -356,12 +356,21 @@ Private Function DrawLedger(ws As Worksheet, ByVal d As Date) As Long
     For c = 0 To 11
         ws.Columns(c + 1).ColumnWidth = w(c)
     Next c
-    ws.Range("M:N").Hidden = True
+    ' 숨김 속성은 환경에 따라 거부될 수 있어(1004) 실패하면 너비 0 으로 대신함
+    On Error Resume Next
+    ws.Columns(SCR_NOTE_L).EntireColumn.Hidden = True
+    If Err.Number <> 0 Then Err.Clear: ws.Columns(SCR_NOTE_L).ColumnWidth = 0
+    ws.Columns(SCR_NOTE_R).EntireColumn.Hidden = True
+    If Err.Number <> 0 Then Err.Clear: ws.Columns(SCR_NOTE_R).ColumnWidth = 0
+    On Error GoTo 0
 
     ' 1행 = 버튼 줄, 2행 = 상태 문구 + 현황판 날짜, 3행 숨김, 4행 = 날짜/범례, 5행 = 제목 막대, 6행 = 머리글
     ws.rows(1).RowHeight = 30
     ws.rows(2).RowHeight = 22
-    ws.rows(3).Hidden = True
+    On Error Resume Next
+    ws.rows(3).EntireRow.Hidden = True
+    If Err.Number <> 0 Then Err.Clear: ws.rows(3).RowHeight = 0.5
+    On Error GoTo 0
     ws.rows(4).RowHeight = 20
     ws.rows(5).RowHeight = 24
     ws.rows(6).RowHeight = 24
