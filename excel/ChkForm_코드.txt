@@ -66,6 +66,7 @@ Private nodeRef() As Long
 Private nodeLvl() As Integer
 
 Private busy As Boolean
+Private ready As Boolean         ' 폼 구성이 끝난 뒤에만 이벤트 처리
 Private searching As Boolean
 Private mouseTick As Double
 Private curRow As Long
@@ -83,6 +84,7 @@ Private Sub UserForm_Initialize()
     busy = False
     ShowGuide
     UpdateTotal
+    ready = True
 End Sub
 
 Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
@@ -296,7 +298,8 @@ End Function
 
 Private Function IsDone(ByVal i As Long) As Boolean
     If i < 1 Then Exit Function
-    If IsDate(dDone(i)) Then IsDone = (Int(CDbl(CDate(dDone(i)))) = CLng(Date))
+    If IsEmpty(dDone(i)) Then Exit Function
+    If IsNumeric(dDone(i)) Then IsDone = (Int(CDbl(dDone(i))) = CLng(Date))
 End Function
 
 Private Function IsSelfTask(ByVal t As Long) As Boolean
@@ -556,7 +559,7 @@ Private Sub cboCyc_Change()
 End Sub
 
 Private Sub Refilter()
-    If busy Then Exit Sub
+    If busy Or Not ready Then Exit Sub
     busy = True
     BuildTree
     On Error Resume Next
@@ -694,7 +697,7 @@ Private Sub btnRec_Click()
     ev.Cells(r, 5).Value = "완료"
     ws.Cells(dRow(curRow), 9).Value = nowT
     ws.Cells(dRow(curRow), 9).NumberFormat = "yyyy-mm-dd hh:nn"
-    dDone(curRow) = nowT
+    dDone(curRow) = CDbl(nowT)
     AfterChange
     lblStatus.Caption = "점검 이력을 기록했습니다 (" & Format(nowT, "hh:nn") & ")"
 End Sub
