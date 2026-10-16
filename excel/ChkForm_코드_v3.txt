@@ -187,6 +187,8 @@ Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
     On Error Resume Next
     SaveMyArea
     Application.Visible = True        ' 폼을 닫으면 엑셀 화면 복구
+    Me.Hide
+    ThisWorkbook.Windows(1).Visible = True
     ThisWorkbook.Save
     On Error GoTo 0
 End Sub

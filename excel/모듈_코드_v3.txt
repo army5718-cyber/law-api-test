@@ -1,0 +1,27 @@
+Option Explicit
+
+' 체크리스트 실행 : 엑셀 화면(시트)은 숨기고 폼만 표시합니다.
+' (파일이 완전히 열린 뒤 ThisWorkbook 의 OnTime 으로 호출됩니다)
+Sub StartChecklist()
+    On Error GoTo fail
+    ThisWorkbook.Windows(1).Visible = False
+    Application.Visible = False
+    ContForm.Show
+    Exit Sub
+fail:
+    RestoreExcel
+    MsgBox "체크리스트를 여는 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation
+End Sub
+
+' 엑셀 화면 복구
+Sub RestoreExcel()
+    On Error Resume Next
+    Application.Visible = True
+    ThisWorkbook.Windows(1).Visible = True
+    On Error GoTo 0
+End Sub
+
+' 엑셀 화면에서 체크리스트를 다시 열 때 사용 (Alt+F8 > ShowChecklist)
+Sub ShowChecklist()
+    StartChecklist
+End Sub

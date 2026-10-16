@@ -1,14 +1,11 @@
 Option Explicit
 
 ' 파일을 열면 엑셀 화면(시트)은 숨기고 체크리스트 폼만 먼저 실행합니다.
-' 폼을 닫거나 오류가 나면 엑셀 화면이 다시 보입니다.
+' 엑셀이 파일을 다 연 뒤(약 1초 후)에 실행해야 숨김이 풀리지 않습니다.
 Private Sub Workbook_Open()
+    On Error Resume Next
+    ThisWorkbook.Windows(1).Visible = False
     Application.Visible = False
-    On Error GoTo fail
-    ContForm.Show
-    Application.Visible = True
-    Exit Sub
-fail:
-    Application.Visible = True
-    MsgBox "체크리스트를 여는 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation
+    Application.OnTime Now + TimeSerial(0, 0, 1), "'" & ThisWorkbook.Name & "'!StartChecklist"
+    On Error GoTo 0
 End Sub
