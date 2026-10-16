@@ -4,7 +4,7 @@ Option Explicit
 '  업무 체크리스트 v3  -  ContForm 코드
 '   - 폼 크기 1/2 (FORM_SCALE) + 실행 시 화면 우측 상단에 자동 배치, 항상 위
 '   - 파일을 열면 폼이 먼저 실행되고 엑셀 시트는 숨김 (폼을 닫으면 엑셀 화면 복구)
-'   - 확인사항 창을 넓게, 메모/이력/버튼류 삭제 (완료는 체크박스 하나로)
+'   - 확인사항 창을 넓게, 메모/이력/버튼류/완료 체크 삭제
 '   데이터 : Checklist 시트 (I열 완료일시) / 이력 : Events 시트
 ' ==========================================================
 
@@ -65,7 +65,6 @@ Private WithEvents cboArea As MSForms.ComboBox
 Private WithEvents btnExp As MSForms.CommandButton
 Private WithEvents btnCol As MSForms.CommandButton
 Private WithEvents lstTree As MSForms.ListBox
-Private WithEvents chkDone As MSForms.CheckBox
 Private WithEvents btnClose As MSForms.CommandButton
 
 Private lblTot As MSForms.Label
@@ -278,14 +277,6 @@ Private Sub BuildUI()
         .BackColor = RGB(255, 255, 255)
     End With
 
-    Set chkDone = Me.Controls.Add("Forms.CheckBox.1", "x_done", True)
-    With chkDone
-        .Left = Sz(RP_L): .Top = Sz(514): .Width = Sz(380): .Height = MaxS(Sz(24), 15)
-        .Font.Name = FONT_NAME: .Font.Size = Fz(11)
-        .Font.Bold = True
-        .BackColor = RGB(236, 243, 248)
-        .Caption = "이번 기간 확인 완료"
-    End With
     Set btnClose = AddBtn("x_close", RP_L + RP_W - 90, 514, 90, 24, "닫기", False)
 
     Set lblStatus = AddLbl("x_status", 10, 524, 296, 16, "", 9, False, RGB(90, 110, 125))
@@ -851,7 +842,7 @@ End Sub
 '  오른쪽 화면
 ' ==========================================================
 Private Sub SetLeafMode(ByVal on_ As Boolean)
-    chkDone.Visible = on_
+    ' (표시할 개별 컨트롤 없음)
 End Sub
 
 Private Sub ClearBadges()
@@ -868,7 +859,7 @@ Private Sub ShowGuide()
     lblHead.Caption = "사용 방법"
     txtBody.Text = "1. 왼쪽 [매일] [매월] ... 목록에서 업무를 클릭합니다." & vbCrLf & _
         "2. 오른쪽에 확인사항이 나옵니다." & vbCrLf & _
-        "3. 점검을 마치면 아래 [이번 기간 확인 완료]를 체크합니다." & vbCrLf & vbCrLf & _
+        "3. 확인사항을 보며 업무를 점검합니다." & vbCrLf & vbCrLf & _
         "* 완료 표시는 주기에 맞춰 자동으로 초기화됩니다." & vbCrLf & _
         "   (매일 업무는 내일, 매월 업무는 다음 달에 다시 미완료)" & vbCrLf & _
         "* 업무분야 선택 상자로 내 업무만 볼 수 있습니다." & vbCrLf & vbCrLf & _
@@ -957,10 +948,6 @@ End Sub
 
 Private Sub ShowState(ByVal i As Long)
     Dim d As Date, info As String
-    setting = True
-    chkDone.Caption = PeriodName(dEff(i)) & " 확인 완료"
-    chkDone.Value = IsDone(i)
-    setting = False
     If Not IsEmpty(dDone(i)) Then
         If IsNumeric(dDone(i)) Then
             d = CDate(CDbl(dDone(i)))
@@ -974,35 +961,6 @@ End Sub
 ' ==========================================================
 '  완료 체크 / 닫기
 ' ==========================================================
-Private Sub chkDone_Click()
-    Dim ws As Worksheet, ev As Worksheet, r As Long, nowT As Date
-    If setting Or curRow < 1 Then Exit Sub
-
-    Set ws = ThisWorkbook.Worksheets("Checklist")
-    If chkDone.Value Then
-        nowT = Now
-        ws.Cells(dRow(curRow), 9).Value = nowT
-        ws.Cells(dRow(curRow), 9).NumberFormat = "yyyy-mm-dd hh:nn"
-        dDone(curRow) = CDbl(nowT)
-        On Error Resume Next
-        Set ev = ThisWorkbook.Worksheets("Events")
-        On Error GoTo 0
-        If Not ev Is Nothing Then
-            r = ev.Cells(ev.Rows.Count, "A").End(xlUp).Row + 1
-            ev.Cells(r, 1).Value = nowT
-            ev.Cells(r, 1).NumberFormat = "yyyy-mm-dd hh:nn"
-            ev.Cells(r, 2).Value = dArea(curRow)
-            ev.Cells(r, 3).Value = dTask(curRow)
-            ev.Cells(r, 4).Value = dSub(curRow)
-            ev.Cells(r, 5).Value = "완료"
-        End If
-    Else
-        ws.Cells(dRow(curRow), 9).ClearContents
-        dDone(curRow) = Empty
-    End If
-    AfterChange
-End Sub
-
 Private Sub AfterChange()
     Dim k As Long, keep As Long
     keep = lstTree.ListIndex
