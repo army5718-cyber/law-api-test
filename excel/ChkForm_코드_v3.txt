@@ -3,7 +3,7 @@ Option Explicit
 ' ==========================================================
 '  업무 체크리스트 v3  -  ContForm 코드
 '   - 폼 크기 1/2 (FORM_SCALE) + 실행 시 화면 우측 상단에 자동 배치, 항상 위
-'   - 엑셀 화면과 폼이 동시에 떠 있음 (모델리스) / 파일을 열면 폼이 먼저 실행
+'   - 파일을 열면 폼이 먼저 실행되고 엑셀 시트는 숨김 (폼을 닫으면 엑셀 화면 복구)
 '   - 확인사항 창을 넓게, 메모/이력/버튼류 삭제 (완료는 체크박스 하나로)
 '   데이터 : Checklist 시트 (I열 완료일시) / 이력 : Events 시트
 ' ==========================================================
@@ -186,6 +186,7 @@ End Sub
 Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
     On Error Resume Next
     SaveMyArea
+    Application.Visible = True        ' 폼을 닫으면 엑셀 화면 복구
     ThisWorkbook.Save
     On Error GoTo 0
 End Sub
