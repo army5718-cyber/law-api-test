@@ -1,0 +1,11 @@
+Option Explicit
+
+' 파일을 열면 체크리스트 폼이 먼저 실행됩니다.
+' 엑셀 화면은 그대로 두고, 폼은 화면 우측 상단에 항상 위로 표시됩니다.
+Private Sub Workbook_Open()
+    On Error GoTo fail
+    ContForm.Show vbModeless
+    Exit Sub
+fail:
+    MsgBox "체크리스트를 여는 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation
+End Sub
