@@ -48,7 +48,7 @@ Private Const SWP_NOSIZE = &H1
 Private Const SPI_GETWORKAREA = 48
 
 ' ----- 설정 -----
-Private Const FORM_TITLE As String = "업무 체크리스트"
+Private Const FORM_TITLE As String = "CS 업무관리 프로그램"
 Private Const FONT_NAME As String = "Malgun Gothic"
 Private Const FORM_SCALE As Single = 0.5       ' 폼 크기 배율 (1 = 기존 크기, 0.5 = 1/2)
 Private Const MARGIN_PX As Long = 10           ' 화면 우측 상단 여백
